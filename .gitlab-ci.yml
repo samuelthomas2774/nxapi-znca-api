@@ -33,29 +33,34 @@ build-docker:
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
 
     - |
-      [ "$DH_REGISTRY_IMAGE" != "" ] && \
-        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" && \
+      if [ "$DH_REGISTRY_IMAGE" != "" ]; then
+        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
         docker push "$DH_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+      fi
 
     - |
-      [ "$CI_COMMIT_TAG" != "" ] && \
-        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG" && \
-        docker push "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG" && \
-        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:latest" && \
+      if [ "$CI_COMMIT_TAG" != "" ]; then
+        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+        docker push "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:latest"
         docker push "$DH_REGISTRY_IMAGE:latest"
+      fi
 
     - |
-      [ "$CI_COMMIT_TAG" != "" ] && [ "$DH_REGISTRY_IMAGE" != "" ] && \
-        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG" && \
-        docker push "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG" && \
-        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:latest" && \
+      if [ "$CI_COMMIT_TAG" != "" ] && [ "$DH_REGISTRY_IMAGE" != "" ]; then
+        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+        docker push "$DH_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:latest"
         docker push "$DH_REGISTRY_IMAGE:latest"
+      fi
   tags:
     - docker
   only:
     refs:
       - main
       - /^v.*$/
+    variables:
+      - $BUILD_DOCKER_IMAGE == "true"
   cache:
     policy: pull
 
