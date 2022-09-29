@@ -12,7 +12,7 @@
             "cwd": "${workspaceFolder}",
             "args": [
                 "android-frida-server",
-                "android.local"
+                "android.local:5555"
             ],
             "outputCapture": "std",
             "env": {

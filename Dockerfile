@@ -28,7 +28,7 @@ RUN npm ci --production
 COPY resources /app/resources
 COPY --from=build /app/dist /app/dist
 
-RUN ln -s /app/dist/cli/cli-entry.js /usr/local/bin/nxapi
+RUN ln -s /app/dist/cli/cli-entry.js /usr/local/bin/nxapi-znca-api
 ENV NXAPI_DATA_PATH=/data
 ENV NODE_ENV=production
 
