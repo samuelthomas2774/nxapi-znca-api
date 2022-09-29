@@ -15,6 +15,7 @@ export default class Server {
     validate_tokens = true;
     strict_validate = false;
     reattach: (() => void) | null = null;
+    health_ttl = 30 * 1000; // 30 seconds
 
     readonly app: express.Express;
 
@@ -22,6 +23,15 @@ export default class Server {
     api: FridaScriptExports | null = null;
     package_info: PackageInfo | null = null;
     system_info: SystemInfo | null = null;
+
+    last_result: {
+        req: express.Request;
+        data?: FRequest;
+        result: FResult;
+        time: number;
+        dv?: number;
+        da?: number;
+    } | null = null;
 
     constructor() {
         const app = this.app = express();
@@ -48,6 +58,7 @@ export default class Server {
         });
 
         app.post('/api/znca/f', bodyParser.json(), (req, res) => this.handleFRequest(req, res));
+        app.get('/api/znca/health', bodyParser.json(), (req, res) => this.handleHealthRequest(req, res));
     }
 
     async handleFRequest(req: express.Request, res: express.Response) {
@@ -178,6 +189,12 @@ export default class Server {
                 await this.api!.genAudioH2(data.token, timestamp, request_id) :
                 await this.api!.genAudioH(data.token, timestamp, request_id);
 
+            this.last_result = {
+                req, data, result, time: Date.now(),
+                dv: validated - start,
+                da: !was_connected ? connected - validated : undefined,
+            };
+
             debug('Returned %s', result);
 
             const response = {
@@ -194,6 +211,46 @@ export default class Server {
                 'init;dur=' + result.di + ',' +
                 'process;dur=' + result.dp);
             res.end(JSON.stringify(response));
+        });
+    }
+
+    async handleHealthRequest(req: express.Request, res: express.Response) {
+        if (this.last_result && this.last_result.time > (Date.now() - this.health_ttl)) {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Server-Timing',
+                'queue;dur=' + this.last_result.result.dw + ',' +
+                'init;dur=' + this.last_result.result.di + ',' +
+                'process;dur=' + this.last_result.result.dp);
+            res.end(JSON.stringify({last_result_at: new Date(this.last_result.time).toUTCString()}));
+            return;
+        }
+
+        const start = Date.now();
+
+        this.handleRetryAfterReattach(req, res, async () => {
+            const was_connected = !this.ready;
+            await this.ready;
+            const connected = Date.now();
+
+            debug('Test gen_audio_h');
+
+            const result = await this.api!.genAudioH('id_token', 'timestamp', 'request_id');
+
+            this.last_result = {
+                req, result, time: Date.now(),
+                da: !was_connected ? connected - start : undefined,
+            };
+
+            debug('Test returned %s', result);
+
+            res.statusCode = 204;
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Server-Timing',
+                (!was_connected ? 'attach;dur=' + (connected - start) + ',' : '') +
+                'queue;dur=' + result.dw + ',' +
+                'init;dur=' + result.di + ',' +
+                'process;dur=' + result.dp);
+            res.end();
         });
     }
 
