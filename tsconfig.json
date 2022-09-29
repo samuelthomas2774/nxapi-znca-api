@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "target": "es2020",
+        "module": "node16",
+        "jsx": "react",
+        "moduleResolution": "node16",
+        "allowSyntheticDefaultImports": true,
+        "declaration": true,
+        "importHelpers": true,
+        "rootDir": "src",
+        "outDir": "dist",
+        "sourceMap": true,
+        "lib": [
+            "es2020",
+            "dom"
+        ],
+        "stripInternal": true,
+        "skipLibCheck": true
+    }
+}

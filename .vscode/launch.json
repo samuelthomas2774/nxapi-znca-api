@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug server",
+            "type": "node",
+            "program": "dist/cli/cli-entry.js",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "android-frida-server",
+                "android.local"
+            ],
+            "outputCapture": "std",
+            "env": {
+                "DEBUG": "*,-express:*,-body-parser:*",
+                "DEBUG_COLORS": "1",
+                "FORCE_COLOR": "3"
+            },
+        }
+    ]
+}
