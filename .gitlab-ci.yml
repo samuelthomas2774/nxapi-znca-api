@@ -57,7 +57,7 @@ build-docker:
       - main
       - /^v.*$/
   cache:
-    policy: none
+    policy: pull
 
 publish-npm:
   stage: deploy
