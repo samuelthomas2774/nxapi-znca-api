@@ -28,7 +28,7 @@ export default class Server {
         req: express.Request;
         data?: FRequest;
         result: FResult;
-        time: number;
+        time: Date;
         dv?: number;
         da?: number;
     } | null = null;
@@ -58,7 +58,7 @@ export default class Server {
         });
 
         app.post('/api/znca/f', bodyParser.json(), (req, res) => this.handleFRequest(req, res));
-        app.get('/api/znca/health', bodyParser.json(), (req, res) => this.handleHealthRequest(req, res));
+        app.get('/api/znca/health', (req, res) => this.handleHealthRequest(req, res));
     }
 
     async handleFRequest(req: express.Request, res: express.Response) {
@@ -190,7 +190,7 @@ export default class Server {
                 await this.api!.genAudioH(data.token, timestamp, request_id);
 
             this.last_result = {
-                req, data, result, time: Date.now(),
+                req, data, result, time: new Date(),
                 dv: validated - start,
                 da: !was_connected ? connected - validated : undefined,
             };
@@ -215,7 +215,7 @@ export default class Server {
     }
 
     async handleHealthRequest(req: express.Request, res: express.Response) {
-        if (this.last_result && this.last_result.time > (Date.now() - this.health_ttl)) {
+        if (this.last_result && this.last_result.time.getTime() > (Date.now() - this.health_ttl)) {
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Server-Timing',
                 'queue;dur=' + this.last_result.result.dw + ',' +
@@ -237,20 +237,19 @@ export default class Server {
             const result = await this.api!.genAudioH('id_token', 'timestamp', 'request_id');
 
             this.last_result = {
-                req, result, time: Date.now(),
+                req, result, time: new Date(),
                 da: !was_connected ? connected - start : undefined,
             };
 
             debug('Test returned %s', result);
 
-            res.statusCode = 204;
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Server-Timing',
                 (!was_connected ? 'attach;dur=' + (connected - start) + ',' : '') +
                 'queue;dur=' + result.dw + ',' +
                 'init;dur=' + result.di + ',' +
                 'process;dur=' + result.dp);
-            res.end();
+            res.end(JSON.stringify({last_result_at: this.last_result.time.toUTCString()}));
         });
     }
 
