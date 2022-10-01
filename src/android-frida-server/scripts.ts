@@ -18,16 +18,20 @@ fi
 
 ${options.frida_server_path ? `
 # Ensure frida-server is running
-echo "Running frida-server"
-killall ${JSON.stringify(path.basename(options.frida_server_path))}
-nohup ${JSON.stringify(options.frida_server_path)} >/dev/null 2>&1 &
+if [ "\`netstat -lnt | awk '$6 == "LISTEN" && $4 ~ /\\:27042$/'\`" != "" ]; then
+    echo "frida-server is already running"
+else
+    echo "Running frida-server"
+    killall ${JSON.stringify(path.basename(options.frida_server_path))}
+    nohup ${JSON.stringify(options.frida_server_path)} >/dev/null 2>&1 &
 
-if [ "$?" != "0" ]; then
-    echo "Failed to start frida-server"
-    exit 1
+    if [ "$?" != "0" ]; then
+        echo "Failed to start frida-server"
+        exit 1
+    fi
+
+    sleep 1
 fi
-
-sleep 1
 `.trim() : ''}
 
 ${(options.start_method === StartMethod.ACTIVITY ? `
