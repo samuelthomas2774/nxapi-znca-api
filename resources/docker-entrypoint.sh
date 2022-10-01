@@ -2,4 +2,4 @@
 
 mkdir -p /data/android
 
-exec /app/dist/cli/cli-entry.js --data-path /data "$@"
+exec /app/bin/nxapi-znca-api.js --data-path /data "$@"

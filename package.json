@@ -10,11 +10,12 @@
         "url": "git@gitlab.fancy.org.uk:samuel/nxapi-znca-api.git"
     },
     "files": [
-        "dist"
+        "dist",
+        "bin"
     ],
     "exports": null,
     "bin": {
-        "nxapi-znca-api": "dist/cli/cli-entry.js"
+        "nxapi-znca-api": "bin/nxapi-znca-api.js"
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1"
