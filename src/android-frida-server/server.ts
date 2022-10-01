@@ -95,57 +95,7 @@ export default class Server {
         const request_id = 'request_id' in data ? data.request_id! : uuidgen();
 
         try {
-            try {
-                const [jwt, sig] = Jwt.decode<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>(data.token);
-
-                const check_signature = jwt.payload.iss === 'https://accounts.nintendo.com';
-
-                if (data.hash_method === '1' && jwt.payload.iss !== 'https://accounts.nintendo.com') {
-                    throw new Error('Invalid token issuer');
-                }
-                if (data.hash_method === '1' && jwt.payload.aud !== ZNCA_CLIENT_ID) {
-                    throw new Error('Invalid token audience');
-                }
-                if (data.hash_method === '2' && jwt.payload.iss !== 'api-lp1.znc.srv.nintendo.net') {
-                    throw new Error('Invalid token issuer');
-                }
-
-                if (jwt.payload.exp <= (Date.now() / 1000)) {
-                    throw new Error('Token expired');
-                }
-
-                // const jwks = jwt.header.kid &&
-                //     jwt.header.jku?.match(/^https\:\/\/([^/]+\.)?nintendo\.(com|net)(\/|$)/i) ?
-                //     await getJwks(jwt.header.jku, storage) : null;
-
-                // if (check_signature && !jwks) {
-                //     throw new Error('Requires signature verification, but trusted JWKS URL and key ID not included in token');
-                // }
-
-                // const jwk = jwks?.keys.find(jwk => jwk.use === 'sig' && jwk.alg === jwt.header.alg &&
-                //     jwk.kid === jwt.header.kid && jwk.x5c?.length);
-                // const cert = jwk?.x5c?.[0] ? '-----BEGIN CERTIFICATE-----\n' +
-                //     jwk.x5c[0].match(/.{1,64}/g)!.join('\n') + '\n-----END CERTIFICATE-----\n' : null;
-
-                // if (!cert) {
-                //     if (check_signature) throw new Error('Not verifying signature, no JKW found for this token');
-                //     else debug('Not verifying signature, no JKW found for this token');
-                // }
-
-                // const signature_valid = cert && jwt.verify(sig, cert);
-
-                // if (check_signature && !signature_valid) {
-                //     throw new Error('Invalid signature');
-                // }
-
-                // if (!check_signature) {
-                //     if (signature_valid) debug('JWT signature is valid');
-                //     else debug('JWT signature is not valid or not checked');
-                // }
-            } catch (err) {
-                if (this.validate_tokens) throw err;
-                debug('Error validating token from %s, continuing anyway', req.ip, err);
-            }
+            await this.validateToken(req, data.token, data.hash_method);
 
             if (this.strict_validate && 'timestamp' in data) {
                 if (!timestamp!.match(/^\d+$/)) {
@@ -163,7 +113,7 @@ export default class Server {
 
             if (this.strict_validate && 'request_id' in data) {
                 // For Android the request_id should be lowercase hex
-                if (!request_id!.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
+                if (!request_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
                     throw new Error('Request ID not a valid lowercase-hex v4 UUID is not likely to be accepted by the Coral API');
                 }
             }
@@ -282,6 +232,60 @@ export default class Server {
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({error: 'unknown'}));
             }
+        }
+    }
+
+    async validateToken(req: express.Request, token: string, hash_method: '1' | '2') {
+        try {
+            const [jwt, sig] = Jwt.decode<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>(token);
+
+            const check_signature = jwt.payload.iss === 'https://accounts.nintendo.com';
+
+            if (hash_method === '1' && jwt.payload.iss !== 'https://accounts.nintendo.com') {
+                throw new Error('Invalid token issuer');
+            }
+            if (hash_method === '1' && jwt.payload.aud !== ZNCA_CLIENT_ID) {
+                throw new Error('Invalid token audience');
+            }
+            if (hash_method === '2' && jwt.payload.iss !== 'api-lp1.znc.srv.nintendo.net') {
+                throw new Error('Invalid token issuer');
+            }
+
+            if (jwt.payload.exp <= (Date.now() / 1000)) {
+                throw new Error('Token expired');
+            }
+
+            const jwks = jwt.header.kid &&
+                jwt.header.jku?.match(/^https\:\/\/([^/]+\.)?nintendo\.(com|net)(\/|$)/i) ?
+                await getJwks(jwt.header.jku) : null;
+
+            if (check_signature && !jwks) {
+                throw new Error('Requires signature verification, but trusted JWKS URL and key ID not included in token');
+            }
+
+            const jwk = jwks?.keys.find(jwk => jwk.use === 'sig' && jwk.alg === jwt.header.alg &&
+                jwk.kid === jwt.header.kid && jwk.x5c?.length);
+            const cert = jwk?.x5c?.[0] ? '-----BEGIN CERTIFICATE-----\n' +
+                jwk.x5c[0].match(/.{1,64}/g)!.join('\n') + '\n-----END CERTIFICATE-----\n' : null;
+
+            if (!cert) {
+                if (check_signature) throw new Error('Not verifying signature, no JKW found for this token');
+                else debug('Not verifying signature, no JKW found for this token');
+            }
+
+            const signature_valid = cert && jwt.verify(sig, cert);
+
+            if (check_signature && !signature_valid) {
+                throw new Error('Invalid signature');
+            }
+
+            if (!check_signature) {
+                if (signature_valid) debug('JWT signature is valid');
+                else debug('JWT signature is not valid or not checked');
+            }
+        } catch (err) {
+            if (this.validate_tokens) throw err;
+            debug('Error validating token from %s, continuing anyway', req.ip, err);
         }
     }
 }
