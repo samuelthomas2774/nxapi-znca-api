@@ -134,6 +134,10 @@ export default class Server {
             await this.ready;
             const connected = Date.now();
 
+            debug('Calling genAudioH (1)');
+            const dummy_token = await this.api!.genAudioH(data.token, timestamp, request_id);
+            debug('Generated token', dummy_token);
+
             debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH');
 
             const result = data.hash_method === '2' ?
@@ -146,7 +150,7 @@ export default class Server {
                 da: !was_connected ? connected - validated : undefined,
             };
 
-            debug('Returned %s', result);
+            debug('Generated token', result);
 
             const response = {
                 f: result.f,
@@ -158,8 +162,8 @@ export default class Server {
             res.setHeader('Server-Timing',
                 'validate;dur=' + (validated - start) + ',' +
                 (!was_connected ? 'attach;dur=' + (connected - validated) + ',' : '') +
-                'queue;dur=' + result.dw + ',' +
-                'init;dur=' + result.di + ',' +
+                'queue;dur=' + (result.dw + dummy_token.dw) + ',' +
+                'init;dur=' + (result.di + dummy_token.di + dummy_token.dp) + ',' +
                 'process;dur=' + result.dp);
             res.end(JSON.stringify(response));
         });
