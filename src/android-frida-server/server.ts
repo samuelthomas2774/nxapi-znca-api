@@ -4,7 +4,8 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import { getJwks, Jwt } from '../util/jwt.js';
 import { product } from '../util/product.js';
-import { CoralJwtPayload, FRequest, FResult, FridaScriptExports, NintendoAccountIdTokenJwtPayload, PackageInfo, StartMethod, SystemInfo } from './types.js';
+import { FRequest, FResult, FridaScriptExports, PackageInfo, StartMethod, SystemInfo } from './types.js';
+import { CoralJwtPayload, NintendoAccountIdTokenJwtPayload } from '../util/types.js';
 
 const ZNCA_CLIENT_ID = '71b963c1b7b6d119';
 

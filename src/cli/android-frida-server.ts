@@ -6,7 +6,7 @@ import frida, { Session } from 'frida';
 import Server from '../android-frida-server/server.js';
 import { execAdb, execScript, pushScript } from '../android-frida-server/util.js';
 import { frida_script, setup_script, shutdown_script } from '../android-frida-server/scripts.js';
-import { StartMethod } from '../android-frida-server/types.js';
+import { FridaScriptExports, StartMethod } from '../android-frida-server/types.js';
 import type { Arguments as ParentArguments } from './index.js';
 import { ArgumentsCamelCase, Argv, YargsArguments } from '../util/yargs.js';
 import { parseListenAddress } from '../util/net.js';
@@ -74,7 +74,7 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
     {
         const {session, script} = await attach(argv, start_method);
 
-        server.api = script.exports as any;
+        server.api = script.exports as FridaScriptExports;
         server.package_info = await server.api!.getPackageInfo();
         server.system_info = await server.api!.getSystemInfo();
     }
@@ -85,8 +85,13 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
         process.removeListener('SIGINT', onexit);
 
         debug('Exiting', code);
+        console.log('Exiting', code);
         debug('Releasing wake lock', argv.device);
-        execScript(argv.device, '/data/local/tmp/android-znca-api-server-shutdown.sh', argv.execCommand, argv.adbPath);
+        try {
+            execScript(argv.device, '/data/local/tmp/android-znca-api-server-shutdown.sh', argv.execCommand, argv.adbPath);
+        } catch (err) {
+            console.error('Failed to run shutdown script, exiting anyway');
+        }
         process.exit(typeof code === 'number' ? code : 0);
     };
 
@@ -102,7 +107,7 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
 
         server.ready = attach(argv, start_method).then(async ({session, script}) => {
             server.ready = null;
-            server.api = script.exports as any;
+            server.api = script.exports as FridaScriptExports;
 
             const new_system_info = await server.api!.getSystemInfo();
             const new_package_info = await server.api!.getPackageInfo();

@@ -17,10 +17,16 @@ function perform<T>(callback: () => T | Promise<T>) {
 }
 
 export function ping() {
-    return true;
+    return true as const;
 }
 
-export function getPackageInfo() {
+export interface PackageInfo {
+    name: string;
+    version: string;
+    build: number;
+}
+
+export function getPackageInfo(): Promise<PackageInfo> {
     return perform(() => {
         const context = Java.use('android.app.ActivityThread').currentApplication().getApplicationContext();
 
@@ -35,7 +41,36 @@ export function getPackageInfo() {
     });
 }
 
-export function getSystemInfo() {
+export interface SystemInfo {
+    board: string;
+    bootloader: string;
+    brand: string;
+    abis: string[];
+    device: string;
+    display: string;
+    fingerprint: string;
+    hardware: string;
+    host: string;
+    id: string;
+    manufacturer: string;
+    model: string;
+    product: string;
+    tags: string;
+    time: string;
+    type: string;
+    user: string;
+
+    version: {
+        codename: string;
+        release: string;
+        // release_display: string;
+        sdk: string;
+        sdk_int: number;
+        security_patch: string;
+    };
+}
+
+export function getSystemInfo(): Promise<SystemInfo> {
     return perform(() => {
         const Build = Java.use('android.os.Build');
         const Version = Java.use('android.os.Build$VERSION');
@@ -70,7 +105,20 @@ export function getSystemInfo() {
     });
 }
 
-export function genAudioH(token: string, timestamp: string | number | undefined, request_id: string) {
+export interface FResult {
+    f: string;
+    timestamp: string | number;
+    /** Queue wait duration */
+    dw: number;
+    /** Initialisation duration */
+    di: number;
+    /** Processing duration */
+    dp: number;
+}
+
+export function genAudioH(
+    token: string, timestamp: string | number | undefined, request_id: string
+): Promise<FResult> {
     const called = Date.now();
 
     return perform(() => {
@@ -95,7 +143,9 @@ export function genAudioH(token: string, timestamp: string | number | undefined,
     });
 }
 
-export function genAudioH2(token: string, timestamp: string | number | undefined, request_id: string) {
+export function genAudioH2(
+    token: string, timestamp: string | number | undefined, request_id: string
+): Promise<FResult> {
     const called = Date.now();
 
     return perform(() => {
