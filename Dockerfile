@@ -1,4 +1,4 @@
-FROM node:18 as build
+FROM node:19 as build
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ ADD tsconfig.json /app
 
 RUN npx tsc
 
-FROM node:18
+FROM node:19
 
 RUN apt update && \
     apt install -y android-tools-adb && \
