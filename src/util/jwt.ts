@@ -140,7 +140,7 @@ export async function getJwks(url: string, cache_dir?: string) {
         const controller = new AbortController();
 
         const timeout = setTimeout(() => {
-            // @ts-expect-error
+            // @ts-ignore
             controller.abort(new Error('Timeout'));
         }, 10 * 1000);
 
