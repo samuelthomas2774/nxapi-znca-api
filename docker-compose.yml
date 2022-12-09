@@ -2,10 +2,11 @@ version: '3'
 
 services:
   znca-api:
-    build: .
+    # build: .
+    image: samuelthomas2774/nxapi-znca-api
     command:
       - android-frida-server
-      - $ZNCA_API_ANDROID_DEVICE
+      - ${ZNCA_API_ANDROID_DEVICE:-redroid:5555}
       - --exec-command
       - ${ZNCA_API_EXEC_COMMAND:-}
       # - --adb-root
@@ -13,13 +14,11 @@ services:
       - ${ZNCA_API_FRIDA_SERVER_PATH:-/data/local/tmp/frida-server}
       - --start-method
       - ${ZNCA_API_APP_START_METHOD:-spawn}
-      - --health-secret
-      - ${ZNCA_API_HEALTH_SECRET:-}
       - --listen
       - '[::]:80'
     restart: unless-stopped
     depends_on:
-      - web
+      - redroid
     labels:
       traefik.enable: true
       traefik.http.routers.nxapi-znca.entrypoints: websecure
@@ -36,5 +35,27 @@ services:
       interval: 10s
       retries: 10
 
+  #
+  # Before starting the znca-api service, start the redroid service and:
+  #
+  # - Rename /system/xbin/su to /system/xbin/_su (might not be necessary on all redroid versions)
+  # - Install the Nintendo Switch Online app
+  # - Install frida-server (make sure it is executable!)
+  #
+  # The binder and ashmem kernel modules must be loaded on the host before
+  # this service starts (see https://github.com/remote-android/redroid-doc)
+  #
+
+  redroid:
+    image: redroid/redroid:11.0.0-latest
+    command: ro.secure=0
+    restart: unless-stopped
+    privileged: true
+    # ports:
+    #   - 5555:5555/tcp
+    volumes:
+      - android-data:/data
+
 volumes:
   data:
+  android-data:
