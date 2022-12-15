@@ -11,7 +11,7 @@ services:
       - ${ZNCA_API_EXEC_COMMAND:-}
       # - --adb-root
       - --frida-server-path
-      - ${ZNCA_API_FRIDA_SERVER_PATH:-/data/local/tmp/frida-server}
+      - ${ZNCA_API_FRIDA_SERVER_PATH:-/system/bin/frida-server}
       - --start-method
       - ${ZNCA_API_APP_START_METHOD:-spawn}
       - --listen
@@ -47,7 +47,12 @@ services:
   #
 
   redroid:
-    image: redroid/redroid:11.0.0-latest
+    build:
+      context: redroid-coral
+      args:
+        CORAL_APK_URL: ${CORAL_APK_URL}
+        # shasum -a 256 com.nintendo.znca-2.4.0.apk
+        CORAL_APK_HASH_SHA256: da0cf5647a855cadf7f69e02815d3fdf9d7ab3d568fe809f8b8ff47598016d0d
     command: ro.secure=0
     restart: unless-stopped
     privileged: true
