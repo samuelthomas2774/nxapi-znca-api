@@ -1,8 +1,7 @@
 FROM alpine AS download-apk
 
 ARG CORAL_APK_URL
-# shasum -a 256 com.nintendo.znca-2.4.0.apk
-ARG CORAL_APK_HASH_SHA256=da0cf5647a855cadf7f69e02815d3fdf9d7ab3d568fe809f8b8ff47598016d0d
+ARG CORAL_APK_HASH_SHA256
 
 RUN apk add curl perl-utils unzip
 RUN curl -v -L -o /coral.apk "${CORAL_APK_URL}"

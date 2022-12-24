@@ -35,24 +35,15 @@ services:
       interval: 10s
       retries: 10
 
-  #
-  # Before starting the znca-api service, start the redroid service and:
-  #
-  # - Rename /system/xbin/su to /system/xbin/_su (might not be necessary on all redroid versions)
-  # - Install the Nintendo Switch Online app
-  # - Install frida-server (make sure it is executable!)
-  #
   # The binder and ashmem kernel modules must be loaded on the host before
   # this service starts (see https://github.com/remote-android/redroid-doc)
-  #
-
   redroid:
     build:
       context: redroid-coral
       args:
         CORAL_APK_URL: ${CORAL_APK_URL}
         # shasum -a 256 com.nintendo.znca-2.4.0.apk
-        CORAL_APK_HASH_SHA256: da0cf5647a855cadf7f69e02815d3fdf9d7ab3d568fe809f8b8ff47598016d0d
+        CORAL_APK_HASH_SHA256: ${CORAL_APK_HASH_SHA256:-da0cf5647a855cadf7f69e02815d3fdf9d7ab3d568fe809f8b8ff47598016d0d}
     command: ro.secure=0
     restart: unless-stopped
     privileged: true

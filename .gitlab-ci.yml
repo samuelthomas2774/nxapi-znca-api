@@ -32,16 +32,19 @@ build-docker:
     - "node -e \"fs.writeFileSync('package.json', JSON.stringify((json => {json.__nxapi_release = process.env.CI_COMMIT_TAG; return json;})(JSON.parse(fs.readFileSync('package.json', 'utf-8'))), null, 4) + '\\n', 'utf-8')\""
 
     - docker build --pull --no-cache --tag "$CI_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG" .
-    - docker push "$CI_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG"
+    - |
+      if [ "$CI_COMMIT_TAG" = "" ]; then
+        docker push "$CI_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG"
+      fi
 
     - |
-      if [ "$DH_REGISTRY_IMAGE" != "" ]; then
+      if [ "$DH_REGISTRY_IMAGE" != "" ] && [ "$CI_COMMIT_TAG" = "" ]; then
         docker tag "$CI_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG" "$DH_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG"
         docker push "$DH_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG"
       fi
 
     - |
-      if [ "$GH_REGISTRY_IMAGE" != "" ]; then
+      if [ "$GH_REGISTRY_IMAGE" != "" ] && [ "$CI_COMMIT_TAG" = "" ]; then
         docker tag "$CI_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG" "$GH_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG"
         docker push "$GH_REGISTRY_IMAGE:ref-$CI_COMMIT_REF_SLUG"
       fi
