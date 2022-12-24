@@ -253,7 +253,7 @@ export default class Server {
             }
 
             if (jwt.payload.exp <= (Date.now() / 1000)) {
-                throw new Error('Token expired');
+                debug('Token from %s expired', req.ip);
             }
 
             const jwks = jwt.header.kid &&
