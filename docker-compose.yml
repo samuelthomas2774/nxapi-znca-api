@@ -28,7 +28,7 @@ services:
     volumes:
       - data:/data
     healthcheck:
-      test: [ "ENTRYPOINT", "curl", "http://[::1]:80/api/znca/health" ]
+      test: [ "CMD", "curl", "http://127.0.0.1:80/api/znca/health" ]
       timeout: 45s
       interval: 10s
       retries: 10
@@ -44,6 +44,10 @@ services:
         CORAL_APK_HASH_SHA256: ${CORAL_APK_HASH_SHA256:-da0cf5647a855cadf7f69e02815d3fdf9d7ab3d568fe809f8b8ff47598016d0d}
     restart: unless-stopped
     privileged: true
+    healthcheck:
+      test: [ "CMD", "sh", "-c", "[ \"\\`netstat -lnt | awk '\\$6 == \"LISTEN\" && \\$4 ~ /\\:5555$/'\\`\" != \"\" ]" ]
+      timeout: 10s
+      start_period: 2m
 
 volumes:
   data:
