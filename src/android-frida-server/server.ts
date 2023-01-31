@@ -5,16 +5,16 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import { getJwks, Jwt } from '../util/jwt.js';
 import { product } from '../util/product.js';
-import { FRequest, FResult, FridaScriptExports, PackageInfo, StartMethod, SystemInfo } from './types.js';
+import { FRequest, FResult, FridaScriptExports, PackageInfo, SystemInfo } from './types.js';
 import { CoralJwtPayload, NintendoAccountIdTokenJwtPayload } from '../util/types.js';
 import { HttpServer, ResponseError } from '../util/http-server.js';
+import { AndroidDeviceConnection, AndroidDevicePool } from './device.js';
 
 const ZNCA_CLIENT_ID = '71b963c1b7b6d119';
 
 const debug = createDebug('nxapi:znca-api:android-frida-server:api');
 
 export default class Server extends HttpServer {
-    start_method = StartMethod.SPAWN;
     validate_tokens = true;
     strict_validate = false;
     reattach: (() => void) | null = null;
@@ -31,12 +31,16 @@ export default class Server extends HttpServer {
         req: express.Request;
         data?: FRequest;
         result: FResult;
+        device?: AndroidDeviceConnection;
         time: Date;
         dv?: number;
+        dw?: number;
         da?: number;
     } | null = null;
 
-    constructor() {
+    constructor(
+        readonly devices: AndroidDevicePool | null = null,
+    ) {
         super();
 
         const app = this.app = express();
@@ -68,6 +72,37 @@ export default class Server extends HttpServer {
             this.handleFRequest(req, res)));
         app.get('/api/znca/health', this.createApiRequestHandler((req, res) =>
             this.handleHealthRequest(req, res)));
+        app.get('/api/znca/devices', this.createApiRequestHandler((req, res) =>
+            this.handleDevicesRequest(req, res)));
+    }
+
+    setAndroidDeviceHeaders(res: express.Response, device: AndroidDeviceConnection) {
+        res.setHeader('X-Android-Build-Type', device.system_info.type);
+        res.setHeader('X-Android-Release', device.system_info.version.release);
+        res.setHeader('X-Android-Platform-Version', device.system_info.version.sdk_int);
+        res.setHeader('X-znca-Platform', 'Android');
+        res.setHeader('X-znca-Version', device.package_info.version);
+        res.setHeader('X-znca-Build', device.package_info.build);
+    }
+
+    async handleDevicesRequest(req: express.Request, res: express.Response) {
+        return {
+            devices: this.devices!.devices.map(device => ({
+                id: device.device.id,
+                name: device.device.name,
+                data: device.data,
+                android_build_type: device.system_info.type,
+                android_release: device.system_info.version.release,
+                android_platform_version: device.system_info.version.sdk_int,
+                platform: 'Android',
+                znca_version: device.package_info.version,
+                znca_build: device.package_info.build,
+                busy: !this.devices!.available.includes(device),
+            })),
+            worker_count: this.devices!.devices.length,
+            available_count: this.devices!.available.length,
+            queue: this.devices!.waiting.length,
+        };
     }
 
     async handleFRequest(req: express.Request, res: express.Response) {
@@ -110,21 +145,19 @@ export default class Server extends HttpServer {
         const timestamp = 'timestamp' in data ? '' + data.timestamp : undefined;
         const request_id = 'request_id' in data ? data.request_id! : uuidgen();
 
-        return this.handleRetryAfterReattach(req, res, async () => {
-            const was_connected = !this.ready;
-            await this.ready;
-            const connected = Date.now();
-
+        return this.callWithFridaScript(req, res, async (api, queue, attach) => {
             debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH');
 
             const result = data.hash_method === '2' ?
-                await this.api!.genAudioH2(data.token, timestamp, request_id) :
-                await this.api!.genAudioH(data.token, timestamp, request_id);
+                await api.genAudioH2(data.token, timestamp, request_id) :
+                await api.genAudioH(data.token, timestamp, request_id);
 
             this.last_result = {
                 req, data, result, time: new Date(),
+                device: this.devices?.devices.find(d => d.api === api),
                 dv: validated - start,
-                da: !was_connected ? connected - validated : undefined,
+                dw: queue,
+                da: attach,
             };
 
             debug('Returned %s', result);
@@ -137,21 +170,76 @@ export default class Server extends HttpServer {
 
             res.setHeader('Server-Timing',
                 'validate;dur=' + (validated - start) + ',' +
-                (!was_connected ? 'attach;dur=' + (connected - validated) + ',' : '') +
-                'queue;dur=' + result.dw + ',' +
+                (typeof attach === 'number' ? 'attach;dur=' + attach + ',' : '') +
+                'queue;dur=' + (result.dw + (queue ?? 0)) + ',' +
                 'init;dur=' + result.di + ',' +
                 'process;dur=' + result.dp);
+
             return response;
         });
     }
 
     async handleHealthRequest(req: express.Request, res: express.Response) {
         if (this.last_result && this.last_result.time.getTime() > (Date.now() - this.health_ttl)) {
+            if (this.last_result.device) this.setAndroidDeviceHeaders(res, this.last_result.device);
+
             res.setHeader('Server-Timing',
-                'queue;dur=' + this.last_result.result.dw + ',' +
+                'queue;dur=' + (this.last_result.result.dw + (this.last_result.dw ?? 0)) + ',' +
                 'init;dur=' + this.last_result.result.di + ',' +
                 'process;dur=' + this.last_result.result.dp);
-            return {last_result_at: new Date(this.last_result.time).toUTCString()};
+
+            return {
+                last_result_at: new Date(this.last_result.time).toUTCString(),
+                worker_count: this.devices!.devices.length,
+                available_count: this.devices!.available.length,
+                queue: this.devices!.waiting.length,
+            };
+        }
+
+        return this.callWithFridaScript(req, res, async (api, queue, attach) => {
+            debug('Test gen_audio_h');
+
+            const result = await api.genAudioH('id_token', 'timestamp', 'request_id');
+
+            this.last_result = {
+                req, result, time: new Date(),
+                device: this.devices?.devices.find(d => d.api === api),
+                dw: queue,
+                da: attach,
+            };
+
+            debug('Test returned %s', result);
+
+            res.setHeader('Server-Timing',
+                (typeof attach === 'number' ? 'attach;dur=' + attach + ',' : '') +
+                'queue;dur=' + (result.dw + (queue ?? 0)) + ',' +
+                'init;dur=' + result.di + ',' +
+                'process;dur=' + result.dp);
+
+            return {
+                last_result_at: this.last_result.time.toUTCString(),
+                worker_count: this.devices!.devices.length,
+                available_count: this.devices!.available.length,
+                queue: this.devices!.waiting.length,
+            };
+        }, !this.devices?.devices.length ?? false);
+    }
+
+    callWithFridaScript<T>(
+        req: express.Request, res: express.Response,
+        fn: (api: FridaScriptExports, queue?: number, attach?: number) => Promise<T>,
+        wait = true,
+    ) {
+        if (this.devices) {
+            const controller = new AbortController();
+
+            req.on('close', () => controller.abort(new Error('Request aborted')));
+
+            return this.devices.callWithDevice(async (device, queue) => {
+                this.setAndroidDeviceHeaders(res, device);
+
+                return fn.call(null, device.api, queue ?? undefined, undefined);
+            }, wait ? undefined : 0, 1, controller.signal);
         }
 
         const start = Date.now();
@@ -161,23 +249,7 @@ export default class Server extends HttpServer {
             await this.ready;
             const connected = Date.now();
 
-            debug('Test gen_audio_h');
-
-            const result = await this.api!.genAudioH('id_token', 'timestamp', 'request_id');
-
-            this.last_result = {
-                req, result, time: new Date(),
-                da: !was_connected ? connected - start : undefined,
-            };
-
-            debug('Test returned %s', result);
-
-            res.setHeader('Server-Timing',
-                (!was_connected ? 'attach;dur=' + (connected - start) + ',' : '') +
-                'queue;dur=' + result.dw + ',' +
-                'init;dur=' + result.di + ',' +
-                'process;dur=' + result.dp);
-            return {last_result_at: this.last_result.time.toUTCString()};
+            return fn.call(null, this.api!, undefined, !was_connected ? connected - start : undefined);
         });
     }
 

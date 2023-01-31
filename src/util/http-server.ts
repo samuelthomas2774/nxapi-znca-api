@@ -56,8 +56,9 @@ export class HttpServer {
             err.sendResponse(req, res);
         } else {
             this.sendJsonResponse(res, {
-                error: err,
+                error: 'unknown_error',
                 error_message: (err as Error).message,
+                error_data: err,
             }, 500);
         }
     }

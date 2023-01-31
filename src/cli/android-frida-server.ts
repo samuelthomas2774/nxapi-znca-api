@@ -1,12 +1,10 @@
 import process from 'node:process';
-import { execFileSync } from 'node:child_process';
 import * as net from 'node:net';
+import * as dns from 'node:dns/promises';
 import createDebug from 'debug';
-import frida, { Session } from 'frida';
 import Server from '../android-frida-server/server.js';
-import { execAdb, execScript, pushScript } from '../android-frida-server/util.js';
-import { frida_script, setup_script, shutdown_script } from '../android-frida-server/scripts.js';
-import { FridaScriptExports, StartMethod } from '../android-frida-server/types.js';
+import { AndroidDeviceManager, AndroidDevicePool } from '../android-frida-server/device.js';
+import { StartMethod } from '../android-frida-server/types.js';
 import type { Arguments as ParentArguments } from './index.js';
 import { ArgumentsCamelCase, Argv, YargsArguments } from '../util/yargs.js';
 import { parseListenAddress } from '../util/net.js';
@@ -47,6 +45,9 @@ export function builder(yargs: Argv<ParentArguments>) {
         describe: 'Validate tokens before passing them to znca',
         type: 'boolean',
         default: true,
+    }).option('resolve-multiple-devices', {
+        type: 'boolean',
+        default: false,
     }).option('listen', {
         describe: 'Server address and port',
         type: 'array',
@@ -63,21 +64,94 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
         argv.startMethod === 'service' ? StartMethod.SERVICE :
         StartMethod.NONE;
 
-    const server = new Server();
+    const device_pool = new AndroidDevicePool();
+    const devices = new Set<AndroidDeviceManager>();
 
-    server.start_method = start_method;
+    if (argv.resolveMultipleDevices) {
+        // Automatically add multiple devices using the same hostname
+        // This is intended to be used with scaled redroid containers
+        // The server will check for updated containers every 1m
+        // The server will not exit if any devices disconnect
+
+        const updateDevices = async () => {
+            const results = await dns.lookup(argv.device, {
+                all: true,
+            });
+
+            debug('Updating devices', results);
+
+            const device_names = [];
+
+            for (const result of results) {
+                const device_name = result.family === 6 ?
+                    '[' + result.address + ']:5555' : result.address + ':5555';
+
+                device_names.push(device_name);
+                if ([...devices].find(d => d.device_name === device_name)) continue;
+
+                debug('Adding device %s', device_name);
+
+                try {
+                    const device = await AndroidDeviceManager.create(
+                        device_pool,
+                        device_name,
+                        argv.adbPath,
+                        argv.adbRoot,
+                        argv.execCommand,
+                        argv.fridaServerPath,
+                        start_method,
+                    );
+
+                    device.onReattachFailed = () => {
+                        setTimeout(() => device.reattach(), 1000);
+                    };
+
+                    devices.add(device);
+                } catch (err) {
+                    debug('Error adding device %s', device_name, err);
+
+                    // Retry on next update
+                }
+            }
+
+            for (const device of devices) {
+                if (device_names.includes(device.device_name)) continue;
+
+                debug('Removing device %s', device.device_name);
+                device.destroy();
+                devices.delete(device);
+            }
+
+            setTimeout(updateDevices, 30 * 1000).unref();
+        };
+
+        await updateDevices();
+    } else {
+        // Standard device connection mode - one server per device connection
+        // The server will not start until the device is connected
+        // If the device disconnects, the server will exit if it is unable to reconnect
+
+        const device = await AndroidDeviceManager.create(
+            device_pool,
+            argv.device,
+            argv.adbPath,
+            argv.adbRoot,
+            argv.execCommand,
+            argv.fridaServerPath,
+            start_method,
+        );
+
+        device.onReattachFailed = () => {
+            console.error('Failed to reattach to the Android device, exiting');
+            process.exit(1);
+        };
+
+        devices.add(device);
+    }
+
+    const server = new Server(device_pool);
     server.validate_tokens = argv.validateTokens;
     server.strict_validate = argv.strictValidate;
-
-    await setup(argv, start_method);
-
-    {
-        const {session, script} = await attach(argv, start_method);
-
-        server.api = script.exports as FridaScriptExports;
-        server.package_info = await server.api!.getPackageInfo();
-        server.system_info = await server.api!.getSystemInfo();
-    }
 
     const onexit = (code: number | NodeJS.Signals) => {
         process.removeListener('exit', onexit);
@@ -86,48 +160,17 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
 
         debug('Exiting', code);
         console.log('Exiting', code);
-        debug('Releasing wake lock', argv.device);
-        try {
-            execScript(argv.device, '/data/local/tmp/android-znca-api-server-shutdown.sh', argv.execCommand, argv.adbPath);
-        } catch (err) {
-            console.error('Failed to run shutdown script, exiting anyway');
+
+        for (const device of devices) {
+            device.destroy();
         }
+
         process.exit(typeof code === 'number' ? code : 0);
     };
 
     process.on('exit', onexit);
     process.on('SIGTERM', onexit);
     process.on('SIGINT', onexit);
-
-    function reattach() {
-        // Already attempting to reattach
-        if (server.ready) return;
-
-        debug('Attempting to reconnect to the device');
-
-        server.ready = attach(argv, start_method).then(async ({session, script}) => {
-            server.ready = null;
-            server.api = script.exports as FridaScriptExports;
-
-            const new_system_info = await server.api!.getSystemInfo();
-            const new_package_info = await server.api!.getPackageInfo();
-
-            if (server.system_info?.version.sdk_int !== new_system_info.version.sdk_int) {
-                debug('Android system version updated while disconnected');
-            }
-            if (server.package_info?.build !== new_package_info.build) {
-                debug('znca version updated while disconnected');
-            }
-
-            server.system_info = new_system_info;
-            server.package_info = new_package_info;
-        }).catch(err => {
-            console.error('Reattach failed', err);
-            process.exit(1);
-        });
-    }
-
-    server.reattach = reattach;
 
     const app = server.app;
 
@@ -141,108 +184,16 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
     }
 
     setInterval(async () => {
-        try {
-            await server.api!.ping();
-        } catch (err) {
-            if ((err as any)?.message === 'Script is destroyed') {
-                reattach();
-                return;
-            }
-
-            throw err;
-        }
+        await device_pool.ping();
     }, 5000);
-
-    debug('System info', server.system_info);
-    debug('Package info', server.package_info);
 
     try {
         debug('Test gen_audio_h');
-        const result = await server.api!.genAudioH('id_token', 'timestamp', 'request_id');
+        const result = await device_pool.callWithDevice(device => {
+            return device.api.genAudioH('id_token', 'timestamp', 'request_id');
+        });
         debug('Test returned', result);
     } catch (err) {
         debug('Test failed', err);
     }
-}
-
-async function setup(argv: ArgumentsCamelCase<Arguments>, start_method: StartMethod) {
-    debug('Connecting to device %s', argv.device);
-    let co = execFileSync(argv.adbPath ?? 'adb', [
-        'connect',
-        argv.device,
-    ], {
-        windowsHide: true,
-    });
-
-    while (co.toString().includes('failed to authenticate')) {
-        console.log('');
-        console.log('-- Allow this computer to connect to the device. --');
-        console.log('');
-        await new Promise(rs => setTimeout(rs, 5 * 1000));
-
-        execAdb([
-            'disconnect',
-            argv.device,
-        ], argv.adbPath);
-
-        debug('Connecting to device %s', argv.device);
-        co = execFileSync(argv.adbPath ?? 'adb', [
-            'connect',
-            argv.device,
-        ], {
-            windowsHide: true,
-        });
-    }
-
-    debug('Pushing scripts');
-
-    await pushScript(argv.device, setup_script({
-        frida_server_path: argv.fridaServerPath,
-        start_method,
-    }), '/data/local/tmp/android-znca-api-server-setup.sh', argv.adbPath);
-    await pushScript(argv.device, shutdown_script, '/data/local/tmp/android-znca-api-server-shutdown.sh', argv.adbPath);
-}
-
-async function attach(argv: ArgumentsCamelCase<Arguments>, start_method: StartMethod) {
-    if (argv.adbRoot) {
-        debug('Restarting adbd as root');
-
-        execAdb([
-            'root',
-        ], argv.adbPath, argv.device);
-    }
-
-    debug('Running scripts');
-    execScript(argv.device, '/data/local/tmp/android-znca-api-server-setup.sh', argv.execCommand, argv.adbPath);
-
-    debug('Done');
-
-    const device = await frida.getDevice(argv.device);
-    debug('Connected to frida device %s', device.name);
-
-    let session: Session;
-
-    try {
-        const process = start_method === StartMethod.SPAWN ?
-            {pid: await device.spawn('com.nintendo.znca')} :
-            await device.getProcess('Nintendo Switch Online');
-
-        debug('process', process);
-
-        session = await device.attach(process.pid);
-
-        if (start_method === StartMethod.SPAWN) {
-            await device.resume(session.pid);
-        }
-    } catch (err) {
-        debug('Could not attach to process', err);
-        throw new Error('Failed to attach to process');
-    }
-
-    debug('Attached to app process, pid %d', session.pid);
-
-    const script = await session.createScript(frida_script);
-    await script.load();
-
-    return {session, script};
 }

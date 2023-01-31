@@ -6,12 +6,10 @@ services:
     image: samuelthomas2774/nxapi-znca-api
     command:
       - android-frida-server
-      - ${ZNCA_API_ANDROID_DEVICE:-redroid:5555}
-      - --exec-command
-      - ${ZNCA_API_EXEC_COMMAND:-}
-      # - --adb-root
+      - redroid
+      - --resolve-multiple-devices
       - --frida-server-path
-      - ${ZNCA_API_FRIDA_SERVER_PATH:-/system/bin/frida-server}
+      - /system/bin/frida-server
       - --start-method
       - ${ZNCA_API_APP_START_METHOD:-spawn}
       - --listen
@@ -44,14 +42,8 @@ services:
         CORAL_APK_URL: ${CORAL_APK_URL}
         # shasum -a 256 com.nintendo.znca-2.4.0.apk
         CORAL_APK_HASH_SHA256: ${CORAL_APK_HASH_SHA256:-da0cf5647a855cadf7f69e02815d3fdf9d7ab3d568fe809f8b8ff47598016d0d}
-    command: ro.secure=0
     restart: unless-stopped
     privileged: true
-    # ports:
-    #   - 5555:5555/tcp
-    volumes:
-      - android-data:/data
 
 volumes:
   data:
-  android-data:

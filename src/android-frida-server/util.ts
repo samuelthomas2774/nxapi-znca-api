@@ -1,21 +1,24 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import * as child_process from 'node:child_process';
 import * as fs from 'node:fs/promises';
+import * as util from 'node:util';
 import createDebug from 'debug';
 import getPaths from 'env-paths';
 import mkdirp from 'mkdirp';
 
 const debug = createDebug('nxapi:znca-api:android-frida-server:util');
 
+const execFile = util.promisify(child_process.execFile);
+
 const paths = getPaths('nxapi');
 const script_dir = path.join(paths.temp, 'android-znca-api-server');
 
 await mkdirp(script_dir);
 
-export function execAdb(args: string[], adb_path?: string, device?: string) {
-    execFileSync(adb_path ?? 'adb', device ? ['-s', device, ...args] : args, {
-        stdio: 'inherit',
+export async function execAdb(args: string[], adb_path?: string, device?: string) {
+    await execFile(adb_path ?? 'adb', device ? ['-s', device, ...args] : args, {
+        // stdio: 'inherit',
         windowsHide: true,
     });
 }
@@ -34,26 +37,26 @@ export async function pushScript(device: string, content: string, path: string, 
 
     debug('Pushing script', path, filename);
 
-    execAdb([
+    await execAdb([
         'push',
         filename,
         path,
     ], adb_path, device);
 
-    execAdb([
+    await execAdb([
         'shell',
         'chmod 755 ' + JSON.stringify(path),
     ], adb_path, device);
 }
 
-export function execScript(device: string, path: string, exec_command?: string, adb_path?: string) {
+export async function execScript(device: string, path: string, exec_command?: string, adb_path?: string) {
     const command = exec_command ?
         exec_command.replace('{cmd}', JSON.stringify(path)) :
         path;
 
     debug('Running script', command);
 
-    execAdb([
+    await execAdb([
         'shell',
         command,
     ], adb_path, device);
