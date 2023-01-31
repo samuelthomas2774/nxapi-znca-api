@@ -2,11 +2,8 @@ import process from 'node:process';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs/promises';
-import * as child_process from 'node:child_process';
 import * as util from 'node:util';
 import createDebug from 'debug';
-
-const exec = util.promisify(child_process.exec);
 
 const debug = createDebug('nxapi:util:product');
 
@@ -17,21 +14,35 @@ const debug = createDebug('nxapi:util:product');
 export const dir = path.resolve(fileURLToPath(import.meta.url), '..', '..', '..');
 
 export const pkg = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf-8'));
-export const version: string = pkg.version;
+const match = pkg.version.match(/^(\d+\.\d+\.\d+)-next\b/i);
+export const version: string = match?.[1] ?? pkg.version;
 export const release: string | null = pkg.__nxapi_release ?? null;
 
-export const git = await (async () => {
+export const docker: string | true | null = pkg.__nxapi_docker ?? await (async () => {
     try {
-        await fs.stat(path.join(dir, '.git'));
+        await fs.stat('/.dockerenv');
+        return true;
     } catch (err) {
         return null;
     }
+})();
 
-    const options: child_process.ExecOptions = {cwd: dir};
+export const git = pkg.__nxapi_git ?? await (async () => {
+    try {
+        await fs.stat(path.join(dir, '.git'));
+    } catch (err) {
+        if (!release) debug('Unable to find revision');
+        return null;
+    }
+
+    const child_process = await import('node:child_process');
+    const execFile = util.promisify(child_process.execFile);
+    const git = (...args: string[]) => execFile('git', args, {cwd: dir}).then(({stdout}) => stdout.toString().trim());
+
     const [revision, branch, changed_files] = await Promise.all([
-        exec('git rev-parse HEAD', options).then(({stdout}) => stdout.toString().trim()),
-        exec('git rev-parse --abbrev-ref HEAD', options).then(({stdout}) => stdout.toString().trim()),
-        exec('git diff --name-only HEAD', options).then(({stdout}) => stdout.toString().trim()),
+        git('rev-parse', 'HEAD'),
+        git('rev-parse', '--abbrev-ref', 'HEAD'),
+        git('diff', '--name-only', 'HEAD'),
     ]);
 
     return {
@@ -42,7 +53,8 @@ export const git = await (async () => {
 })();
 
 export const dev = process.env.NODE_ENV !== 'production' &&
-    (!!git || process.env.NODE_ENV === 'development');
+    (!release || process.env.NODE_ENV === 'development');
 
 export const product = 'nxapi-znca-api ' + version +
-    (!release && git ? '-' + git.revision.substr(0, 7) + (git.branch ? ' (' + git.branch + ')' : '') : '');
+    (!release && git ? '-' + git.revision.substr(0, 7) + (git.branch ? ' (' + git.branch + ')' : '') :
+        !release ? '-?' : '');
