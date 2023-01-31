@@ -83,6 +83,7 @@ export default class Server extends HttpServer {
     }
 
     setAndroidDeviceHeaders(res: express.Response, device: AndroidDeviceConnection) {
+        res.setHeader('X-Device-Id', device.device.id);
         res.setHeader('X-Android-Build-Type', device.system_info.type);
         res.setHeader('X-Android-Release', device.system_info.version.release);
         res.setHeader('X-Android-Platform-Version', device.system_info.version.sdk_int);
