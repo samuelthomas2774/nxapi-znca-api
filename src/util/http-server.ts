@@ -9,7 +9,8 @@ export class HttpServer {
             try {
                 const result = await callback.call(null, req, res);
 
-                if (result) this.sendJsonResponse(res, result);
+                if (result instanceof HttpResponse) result.sendResponse(req, res);
+                else if (result) this.sendJsonResponse(res, result);
                 else res.end();
             } catch (err) {
                 this.handleRequestError(req, res, err);
@@ -61,6 +62,24 @@ export class HttpServer {
                 error_data: err,
             }, 500);
         }
+    }
+}
+
+abstract class HttpResponse {
+    abstract sendResponse(req: Request, res: Response): void;
+}
+
+export class TextResponse extends HttpResponse {
+    constructor(
+        readonly data: string,
+        readonly type = 'text/plain',
+    ) {
+        super();
+    }
+
+    sendResponse(req: Request, res: Response) {
+        res.setHeader('Content-Type', this.type);
+        res.end(this.data);
     }
 }
 

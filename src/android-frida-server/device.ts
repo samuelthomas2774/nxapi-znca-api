@@ -3,6 +3,7 @@ import frida, { Device, Script, Session } from 'frida';
 import * as child_process from 'node:child_process';
 import * as dns from 'node:dns/promises';
 import * as util from 'node:util';
+import MetricsCollector from './metrics.js';
 import { frida_script, setup_script, shutdown_script } from './scripts.js';
 import { FridaScriptExports, PackageInfo, StartMethod, SystemInfo } from './types.js';
 import { execAdb, execScript, pushScript } from './util.js';
@@ -18,7 +19,9 @@ export class AndroidDevicePool {
 
     onDeviceRemoved?: (device: AndroidDeviceConnection) => void;
 
-    constructor() {}
+    constructor(
+        readonly metrics: MetricsCollector | null = null,
+    ) {}
 
     getAvailableDevice() {
         const device = this.available.shift();
@@ -116,13 +119,31 @@ export class AndroidDevicePool {
 
         device.handleDeviceDisconnected(err);
         this.onDeviceRemoved?.(device);
+
+        this.metrics?.total_devices.dec({
+            platform: 'Android',
+            znca_version: device.package_info.version,
+            znca_build: device.package_info.build,
+            android_release: device.system_info.version.release,
+            android_platform_version: device.system_info.version.sdk_int,
+        });
     }
 
     add(device: AndroidDeviceConnection) {
+        if (this.devices.includes(device)) return;
+
         this.devices.push(device);
         this.handleDeviceAvailable(device);
 
         debug('worker added, %d/%d available', this.available.length, this.devices.length, device);
+
+        this.metrics?.total_devices.inc({
+            platform: 'Android',
+            znca_version: device.package_info.version,
+            znca_build: device.package_info.build,
+            android_release: device.system_info.version.release,
+            android_platform_version: device.system_info.version.sdk_int,
+        });
     }
 
     remove(device: AndroidDeviceConnection) {
@@ -139,6 +160,14 @@ export class AndroidDevicePool {
         debug('worker removed, %d/%d available', this.available.length, this.devices.length, device.device.id);
 
         this.onDeviceRemoved?.(device);
+
+        this.metrics?.total_devices.dec({
+            platform: 'Android',
+            znca_version: device.package_info.version,
+            znca_build: device.package_info.build,
+            android_release: device.system_info.version.release,
+            android_platform_version: device.system_info.version.sdk_int,
+        });
     }
 
     async callWithDevice<T>(

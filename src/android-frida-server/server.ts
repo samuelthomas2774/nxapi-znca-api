@@ -9,6 +9,7 @@ import { FRequest, FResult, FridaScriptExports, PackageInfo, SystemInfo } from '
 import { CoralJwtPayload, NintendoAccountIdTokenJwtPayload } from '../util/types.js';
 import { HttpServer, ResponseError } from '../util/http-server.js';
 import { AndroidDeviceConnection, AndroidDevicePool } from './device.js';
+import MetricsCollector from './metrics.js';
 
 const ZNCA_CLIENT_ID = '71b963c1b7b6d119';
 
@@ -40,6 +41,7 @@ export default class Server extends HttpServer {
 
     constructor(
         readonly devices: AndroidDevicePool | null = null,
+        readonly metrics: MetricsCollector | null = null,
     ) {
         super();
 
@@ -74,6 +76,10 @@ export default class Server extends HttpServer {
             this.handleHealthRequest(req, res)));
         app.get('/api/znca/devices', this.createApiRequestHandler((req, res) =>
             this.handleDevicesRequest(req, res)));
+
+        if (this.metrics) {
+            app.get('/metrics', this.createApiRequestHandler(() => this.metrics!.handleMetricsRequest()));
+        }
     }
 
     setAndroidDeviceHeaders(res: express.Response, device: AndroidDeviceConnection) {
@@ -137,6 +143,9 @@ export default class Server extends HttpServer {
         } catch (err) {
             debug('Error validating request from %s', req.ip, err);
             res.setHeader('Server-Timing', 'validate;dur=' + (Date.now() - start));
+            this.metrics?.total_f_requests.inc({status: err instanceof ResponseError ? err.stack : 500});
+            this.metrics?.incFRequestDuration(Date.now() - start,
+                err instanceof ResponseError ? err.status : 500, 'validate');
             throw err;
         }
 
@@ -175,7 +184,21 @@ export default class Server extends HttpServer {
                 'init;dur=' + result.di + ',' +
                 'process;dur=' + result.dp);
 
+            this.metrics?.total_f_requests.inc({status: 200});
+            this.metrics?.incFRequestDuration(validated - start, 200, 'validate');
+            this.metrics?.incFRequestDuration(attach ?? 0, 200, 'attach');
+            this.metrics?.incFRequestDuration(result.dw + (queue ?? 0), 200, 'queue');
+            this.metrics?.incFRequestDuration(result.di, 200, 'init');
+            this.metrics?.incFRequestDuration(result.dp, 200, 'process');
+
             return response;
+        }).catch(err => {
+            this.metrics?.total_f_requests.inc({status: err instanceof ResponseError ? err.stack : 500});
+            this.metrics?.incFRequestDuration(validated - start,
+                err instanceof ResponseError ? err.status : 500, 'validate');
+            this.metrics?.incFRequestDuration(Date.now() - validated,
+                err instanceof ResponseError ? err.status : 500, 'queue');
+            throw err;
         });
     }
 

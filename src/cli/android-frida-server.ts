@@ -8,6 +8,7 @@ import { StartMethod } from '../android-frida-server/types.js';
 import type { Arguments as ParentArguments } from './index.js';
 import { ArgumentsCamelCase, Argv, YargsArguments } from '../util/yargs.js';
 import { parseListenAddress } from '../util/net.js';
+import MetricsCollector from '../android-frida-server/metrics.js';
 
 const debug = createDebug('cli:android-frida-server');
 
@@ -48,6 +49,9 @@ export function builder(yargs: Argv<ParentArguments>) {
     }).option('resolve-multiple-devices', {
         type: 'boolean',
         default: false,
+    }).option('metrics', {
+        type: 'boolean',
+        default: false,
     }).option('listen', {
         describe: 'Server address and port',
         type: 'array',
@@ -64,7 +68,9 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
         argv.startMethod === 'service' ? StartMethod.SERVICE :
         StartMethod.NONE;
 
-    const device_pool = new AndroidDevicePool();
+    const metrics = argv.metrics ? new MetricsCollector() : null;
+
+    const device_pool = new AndroidDevicePool(metrics);
     const devices = new Set<AndroidDeviceManager>();
 
     if (argv.resolveMultipleDevices) {
@@ -149,7 +155,7 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
         devices.add(device);
     }
 
-    const server = new Server(device_pool);
+    const server = new Server(device_pool, metrics);
     server.validate_tokens = argv.validateTokens;
     server.strict_validate = argv.strictValidate;
 
