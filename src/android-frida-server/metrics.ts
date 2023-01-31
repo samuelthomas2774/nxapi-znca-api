@@ -13,14 +13,18 @@ export default class MetricsCollector {
         this.version.set({version, revision: git?.revision}, 1);
 
         for (const status of [200, 400, 500]) {
-            this.total_f_requests.inc({status}, 0);
+            this.total_f_requests.inc({status, type: '1'}, 0);
+            this.total_f_requests.inc({status, type: '2'}, 0);
         }
         for (const state of ['validate', 'attach', 'queue', 'init', 'process']) {
-            this.total_f_request_duration.inc({status: 200, state}, 0);
+            this.total_f_request_duration.inc({status: 200, type: '1', state}, 0);
+            this.total_f_request_duration.inc({status: 200, type: '2', state}, 0);
         }
-        this.total_f_request_duration.inc({status: 400, state: 'validate'}, 0);
+        this.total_f_request_duration.inc({status: 400, type: '1', state: 'validate'}, 0);
+        this.total_f_request_duration.inc({status: 400, type: '2', state: 'validate'}, 0);
         for (const state of ['validate', 'queue']) {
-            this.total_f_request_duration.inc({status: 500, state}, 0);
+            this.total_f_request_duration.inc({status: 500, type: '1', state}, 0);
+            this.total_f_request_duration.inc({status: 500, type: '2', state}, 0);
         }
     }
 
@@ -35,7 +39,7 @@ export default class MetricsCollector {
         name: 'nxapi_znca_api_f_requests_total',
         help: 'Total number of f requests',
         registers: [this.register],
-        labelNames: ['status'],
+        labelNames: ['status', 'type'],
     });
 
     readonly total_f_request_duration = new Counter({
@@ -43,11 +47,13 @@ export default class MetricsCollector {
         help: 'Time processing f requests',
         registers: [this.register],
         // state == validate, attach, queue, init, process
-        labelNames: ['status', 'state'],
+        labelNames: ['status', 'type', 'state'],
     });
 
-    incFRequestDuration(dur: number, status: number, state: 'validate' | 'attach' | 'queue' | 'init' | 'process') {
-        this.total_f_request_duration.inc({status, state}, dur / 1000);
+    incFRequestDuration(
+        dur: number, status: number, type: '1' | '2', state: 'validate' | 'attach' | 'queue' | 'init' | 'process',
+    ) {
+        this.total_f_request_duration.inc({status, type, state}, dur / 1000);
     }
 
     readonly total_devices = new Gauge({

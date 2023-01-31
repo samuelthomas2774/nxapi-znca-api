@@ -144,9 +144,9 @@ export default class Server extends HttpServer {
         } catch (err) {
             debug('Error validating request from %s', req.ip, err);
             res.setHeader('Server-Timing', 'validate;dur=' + (Date.now() - start));
-            this.metrics?.total_f_requests.inc({status: err instanceof ResponseError ? err.stack : 500});
-            this.metrics?.incFRequestDuration(Date.now() - start,
-                err instanceof ResponseError ? err.status : 500, 'validate');
+            const status = err instanceof ResponseError ? err.status : 500;
+            this.metrics?.total_f_requests.inc({status, type: data.hash_method});
+            this.metrics?.incFRequestDuration(Date.now() - start, status, data.hash_method, 'validate');
             throw err;
         }
 
@@ -185,20 +185,19 @@ export default class Server extends HttpServer {
                 'init;dur=' + result.di + ',' +
                 'process;dur=' + result.dp);
 
-            this.metrics?.total_f_requests.inc({status: 200});
-            this.metrics?.incFRequestDuration(validated - start, 200, 'validate');
-            this.metrics?.incFRequestDuration(attach ?? 0, 200, 'attach');
-            this.metrics?.incFRequestDuration(result.dw + (queue ?? 0), 200, 'queue');
-            this.metrics?.incFRequestDuration(result.di, 200, 'init');
-            this.metrics?.incFRequestDuration(result.dp, 200, 'process');
+            this.metrics?.total_f_requests.inc({status: 200, type: data.hash_method});
+            this.metrics?.incFRequestDuration(validated - start, 200, data.hash_method, 'validate');
+            this.metrics?.incFRequestDuration(attach ?? 0, 200, data.hash_method, 'attach');
+            this.metrics?.incFRequestDuration(result.dw + (queue ?? 0), 200, data.hash_method, 'queue');
+            this.metrics?.incFRequestDuration(result.di, 200, data.hash_method, 'init');
+            this.metrics?.incFRequestDuration(result.dp, 200, data.hash_method, 'process');
 
             return response;
         }).catch(err => {
-            this.metrics?.total_f_requests.inc({status: err instanceof ResponseError ? err.stack : 500});
-            this.metrics?.incFRequestDuration(validated - start,
-                err instanceof ResponseError ? err.status : 500, 'validate');
-            this.metrics?.incFRequestDuration(Date.now() - validated,
-                err instanceof ResponseError ? err.status : 500, 'queue');
+            const status = err instanceof ResponseError ? err.status : 500;
+            this.metrics?.total_f_requests.inc({status, type: data.hash_method});
+            this.metrics?.incFRequestDuration(validated - start, status, data.hash_method, 'validate');
+            this.metrics?.incFRequestDuration(Date.now() - validated, status, data.hash_method, 'queue');
             throw err;
         });
     }
