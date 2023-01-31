@@ -5,7 +5,13 @@ This repository contains a server for generating `f` parameters required to auth
 
 This uses Frida to call the token generation functions in the Nintendo Switch Online app on a rooted Android device.
 
-This server can be used instead of the imink/flapg API to avoid sending access tokens to third party APIs.
+This server can be self hosted to avoid sending access tokens to third party APIs.
+
+### Public API
+
+A server running this API is available at https://nxapi-znca-api.fancy.org.uk/api/znca. If you would like to use this set a `User-Agent` header including your project's name and version number (and contact information if your project is not easily discoverable, e.g. on GitHub), and send me a message in the [nxapi Discord server](https://discord.com/invite/4D82rFkXRv). If your project authenticates as the user's Nintendo Account you must explain that their id_token will be sent to a third-party API, and include a link to here.
+
+Status is available at https://nxapi-status.fancy.org.uk. Usage stats are available at https://ubuntu-2204-vm-test.fancy.org.uk/grafana/public-dashboards/57854670274a4ddf98b12332a6c47cf4.
 
 ### Requirements
 
@@ -15,6 +21,8 @@ This server can be used instead of the imink/flapg API to avoid sending access t
 - The Nintendo Switch Online app is installed on the Android device
 
 No other software (e.g. frida-tools) needs to be installed on the computer running nxapi. The Android device must be constantly reachable using ADB. The server will attempt to reconnect to the Android device and will automatically retry any requests that would fail due to the device disconnecting. The server will exit if it fails to reconnect to the device. A service manager should be used to restart the server if it exits.
+
+The service can also run in a container. The Android device can also run in a container using [redroid](https://github.com/remote-android/redroid-doc). See [Docker](#docker).
 
 ### Install
 
@@ -50,9 +58,29 @@ npx tsc
 npm link
 
 # Build Docker image
-docker build . --tag gitlab.fancy.org.uk:5005/samuel/nxapi-znca-api
+docker build . --tag registry.fancy.org.uk/samuel/nxapi-znca-api
 # # Run in Docker
-# docker run -it --rm -v ./data:/data gitlab.fancy.org.uk:5005/samuel/nxapi-znca-api ...
+# docker run -it --rm -v ./data:/data registry.fancy.org.uk/samuel/nxapi-znca-api ...
+```
+
+#### Docker
+
+A docker-compose project using a redroid container is included.
+
+```sh
+# Don't download an archive, as nxapi detects the current git revision
+git clone https://gitlab.fancy.org.uk/samuel/nxapi-znca-api.git
+cd nxapi-znca-api
+
+# Optionally build Docker image (by default docker-compose will pull the latest version from Docker Hub)
+# docker build . --tag registry.fancy.org.uk/samuel/nxapi-znca-api --tag samuelthomas2774/nxapi-znca-api
+
+# Load kernel modules for redroid
+modprobe binder_linux devices="binder,hwbinder,vndbinder"
+modprobe ashmem_linux
+
+# The URL to download the Nintendo Switch Online app from must be provided (a .env file can also be used)
+CORAL_APK_URL="https://example.com/com.nintendo.znca-2.4.0.apk" docker compose up -d
 ```
 
 ### Usage
@@ -99,7 +127,7 @@ nxapi-znca-api android-frida-server android.local:5555 --no-validate-tokens
 # From docker.io
 docker run -it --rm -v ./data:/data samuelthomas2774/nxapi-znca-api ...
 # From gitlab.fancy.org.uk
-docker run -it --rm -v ./data:/data gitlab.fancy.org.uk:5005/samuel/nxapi-znca-api ...
+docker run -it --rm -v ./data:/data registry.fancy.org.uk/samuel/nxapi-znca-api ...
 ```
 
 This server has a single endpoint, `/api/znca/f`, which is fully compatible with [the imink API](https://github.com/JoneWang/imink/wiki/imink-API-Documentation)'s `/f` endpoint. The following data should be sent as JSON:
@@ -150,6 +178,7 @@ Information about the device and the Nintendo Switch Online app, as well as info
 
 Header                          | Description
 --------------------------------|------------------
+`X-Device-Id`                   | ADB device ID (IP address and ADB port) of the Android device
 `X-Android-Build-Type`          | Android build type, e.g. `user`
 `X-Android-Release`             | Android release/marketing version, e.g. `8.0.0`
 `X-Android-Platform-Version`    | Android SDK version, e.g. `26`
