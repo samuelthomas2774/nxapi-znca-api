@@ -1,5 +1,6 @@
 import { collectDefaultMetrics, Counter, Gauge, Registry } from 'prom-client';
 import { TextResponse } from '../util/http-server.js';
+import { git, version } from '../util/product.js';
 
 export default class MetricsCollector {
     readonly register = new Registry();
@@ -8,6 +9,8 @@ export default class MetricsCollector {
         collectDefaultMetrics({
             register: this.register,
         });
+
+        this.version.set({version, revision: git?.revision}, 1);
 
         for (const status of [200, 400, 500]) {
             this.total_f_requests.inc({status}, 0);
@@ -20,6 +23,13 @@ export default class MetricsCollector {
             this.total_f_request_duration.inc({status: 500, state}, 0);
         }
     }
+
+    readonly version = new Gauge({
+        name: 'nxapi_znca_api_version_info',
+        help: 'nxapi-znca-api version',
+        registers: [this.register],
+        labelNames: ['version', 'revision'],
+    });
 
     readonly total_f_requests = new Counter({
         name: 'nxapi_znca_api_f_requests_total',
