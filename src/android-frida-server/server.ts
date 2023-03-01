@@ -115,6 +115,14 @@ export default class Server extends HttpServer {
     async handleFRequest(req: express.Request, res: express.Response) {
         const start = Date.now();
 
+        if (req.headers['x-znca-platform'] && req.headers['x-znca-platform'] !== 'Android') {
+            throw new ResponseError(400, 'unsupported_platform', 'Unsupported X-znca-Platform');
+        }
+        const requested_version = req.headers['x-znca-version']?.toString() ?? null;
+        if (requested_version && !requested_version.match(/^\d+\.\d+\.\d+$/)) {
+            throw new ResponseError(400, 'invalid_request', 'Invalid X-znca-Version value');
+        }
+
         if (req.body && 'type' in req.body) req.body = {
             hash_method:
                 req.body.type === 'nso' ? '1' :
@@ -155,8 +163,8 @@ export default class Server extends HttpServer {
         const timestamp = 'timestamp' in data ? '' + data.timestamp : undefined;
         const request_id = 'request_id' in data ? data.request_id! : uuidgen();
 
-        return this.callWithFridaScript(req, res, async (api, queue, attach) => {
-            debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH');
+        return this.callWithFridaScript(req, res, async (api, queue, attach, device) => {
+            debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH', device?.device.id);
 
             const result = data.hash_method === '2' ?
                 await api.genAudioH2(data.token, timestamp, request_id) :
@@ -193,7 +201,7 @@ export default class Server extends HttpServer {
             this.metrics?.incFRequestDuration(result.dp, 200, data.hash_method, 'process');
 
             return response;
-        }).catch(err => {
+        }, requested_version).catch(err => {
             const status = err instanceof ResponseError ? err.status : 500;
             this.metrics?.total_f_requests.inc({status, type: data.hash_method});
             this.metrics?.incFRequestDuration(validated - start, status, data.hash_method, 'validate');
@@ -219,8 +227,8 @@ export default class Server extends HttpServer {
             };
         }
 
-        return this.callWithFridaScript(req, res, async (api, queue, attach) => {
-            debug('Test gen_audio_h');
+        return this.callWithFridaScript(req, res, async (api, queue, attach, device) => {
+            debug('Test gen_audio_h', device?.device.id);
 
             const result = await api.genAudioH('id_token', 'timestamp', 'request_id');
 
@@ -245,13 +253,13 @@ export default class Server extends HttpServer {
                 available_count: this.devices!.available.length,
                 queue: this.devices!.waiting.length,
             };
-        }, !this.devices?.devices.length ?? false);
+        }, null, !this.devices?.devices.length ?? false);
     }
 
     callWithFridaScript<T>(
         req: express.Request, res: express.Response,
-        fn: (api: FridaScriptExports, queue?: number, attach?: number) => Promise<T>,
-        wait = true,
+        fn: (api: FridaScriptExports, queue?: number, attach?: number, device?: AndroidDeviceConnection) => Promise<T>,
+        version: string | null = null, wait = true,
     ) {
         if (this.devices) {
             const controller = new AbortController();
@@ -261,8 +269,9 @@ export default class Server extends HttpServer {
             return this.devices.callWithDevice(async (device, queue) => {
                 this.setAndroidDeviceHeaders(res, device);
 
-                return fn.call(null, device.api, queue ?? undefined, undefined);
-            }, wait ? undefined : 0, 1, controller.signal);
+                return fn.call(null, device.api, queue ?? undefined, undefined, device);
+            }, device => !version || device.package_info.version === version,
+                wait ? undefined : 0, 1, controller.signal);
         }
 
         const start = Date.now();

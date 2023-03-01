@@ -12,10 +12,15 @@ const debug = createDebug('nxapi:znca-api:android-frida-server:device');
 
 const execFile = util.promisify(child_process.execFile);
 
+type WaitCallback = readonly [
+    callback: (device: AndroidDeviceConnection) => void,
+    filter: ((device: AndroidDeviceConnection) => boolean) | undefined,
+];
+
 export class AndroidDevicePool {
     devices: AndroidDeviceConnection[] = [];
     available: AndroidDeviceConnection[] = [];
-    waiting: ((device: AndroidDeviceConnection) => void)[] = [];
+    waiting: WaitCallback[] = [];
 
     onDeviceRemoved?: (device: AndroidDeviceConnection) => void;
 
@@ -23,44 +28,55 @@ export class AndroidDevicePool {
         readonly metrics: MetricsCollector | null = null,
     ) {}
 
-    getAvailableDevice() {
-        const device = this.available.shift();
+    getAvailableDevice(filter?: (device: AndroidDeviceConnection) => boolean) {
+        for (const device of this.available) {
+            if (!filter || filter.call(null, device)) {
+                this.available.splice(this.available.indexOf(device), 1);
 
-        if (device) debug('use worker, %d/%d available', this.available.length, this.devices.length);
+                debug('use worker, %d/%d available', this.available.length, this.devices.length, device.device.id);
 
-        return device;
+                return device;
+            }
+        }
     }
 
-    waitForAvailableDevice(timeout_ms?: number, signal?: AbortSignal) {
-        const device = this.getAvailableDevice();
+    waitForAvailableDevice(
+        filter?: (device: AndroidDeviceConnection) => boolean, timeout_ms?: number, signal?: AbortSignal,
+    ) {
+        const device = this.getAvailableDevice(filter);
 
         if (device) {
             return Promise.resolve([device, null] as const);
         }
         
         if (!timeout_ms) {
-            return Promise.reject(new AndroidDeviceTimeoutError(this));
+            return Promise.reject(new AndroidDeviceTimeoutError(this, filter));
+        }
+
+        if (this.devices.length && !this.devices.find(device => !filter || filter.call(null, device))) {
+            return Promise.reject(new AndroidDeviceTimeoutError(this, filter));
         }
 
         const start = Date.now();
 
-        debug('waiting for worker, 0/%d available', this.devices.length);
+        debug('waiting for worker, 0/%d available', this.devices.length, filter);
 
         return new Promise<readonly [AndroidDeviceConnection, number | null]>((rs, rj) => {
             const callback = (device: AndroidDeviceConnection) => {
                 const queue_duration = Date.now() - start;
-                debug('use worker, %d/%d available, waited %d ms', this.available.length, this.devices.length, queue_duration);
+                debug('use worker, %d/%d available, waited %d ms', this.available.length, this.devices.length, queue_duration, device.device.id);
                 rs([device, queue_duration]);
                 if (timeout) clearTimeout(timeout);
                 signal?.removeEventListener('abort', onabort);
             };
+            const entry: WaitCallback = [callback, filter];
 
             const timeout = timeout_ms ? setTimeout(() => {
-                debug('timeout waiting for worker, 0/%d available', this.devices.length);
-                rj(new AndroidDeviceTimeoutError(this));
+                debug('timeout waiting for worker, 0/%d available', this.devices.length, filter);
+                rj(new AndroidDeviceTimeoutError(this, filter));
 
                 let index;
-                while ((index = this.waiting.indexOf(callback)) !== -1) {
+                while ((index = this.waiting.indexOf(entry)) !== -1) {
                     this.waiting.splice(index, 1);
                 }
 
@@ -71,7 +87,7 @@ export class AndroidDevicePool {
                 rj(event);
 
                 let index;
-                while ((index = this.waiting.indexOf(callback)) !== -1) {
+                while ((index = this.waiting.indexOf(entry)) !== -1) {
                     this.waiting.splice(index, 1);
                 }
 
@@ -80,7 +96,7 @@ export class AndroidDevicePool {
 
             signal?.addEventListener('abort', onabort);
 
-            this.waiting.push(callback);
+            this.waiting.push(entry);
         });
     }
 
@@ -92,15 +108,19 @@ export class AndroidDevicePool {
 
         this.handleDeviceAvailable(device);
 
-        debug('return worker, %d/%d available', this.available.length, this.devices.length);
+        debug('return worker, %d/%d available', this.available.length, this.devices.length, device.device.id);
     }
 
     protected handleDeviceAvailable(device: AndroidDeviceConnection) {
-        const next = this.waiting.shift();
+        for (const next of this.waiting) {
+            const [callback, filter] = next;
 
-        if (next) {
-            next.call(null, device);
-            return;
+            if (!filter || filter.call(null, device)) {
+                this.waiting.splice(this.waiting.indexOf(next), 1);
+
+                callback.call(null, device);
+                return;
+            }
         }
 
         this.available.push(device);
@@ -172,10 +192,10 @@ export class AndroidDevicePool {
 
     async callWithDevice<T>(
         fn: (device: AndroidDeviceConnection, queue_duration: number | null) => Promise<T> | T,
-        timeout = 30000, retry = 1, signal?: AbortSignal,
+        filter?: (device: AndroidDeviceConnection) => boolean, timeout = 30000, retry = 1, signal?: AbortSignal,
         /** @internal */ _attempts = 0,
     ): Promise<T> {
-        const [device, queue_duration] = await this.waitForAvailableDevice(timeout);
+        const [device, queue_duration] = await this.waitForAvailableDevice(filter, timeout);
 
         try {
             const result = await fn.call(null, device, queue_duration);
@@ -190,8 +210,8 @@ export class AndroidDevicePool {
                 err.device = device;
 
                 if (retry > _attempts) {
-                    debug('Error in callback, retrying %d/%d', _attempts + 1, retry, err);
-                    return this.callWithDevice(fn, timeout, retry, signal, _attempts + 1);
+                    debug('Error in callback, retrying %d/%d', _attempts + 1, retry, device.device.id, err);
+                    return this.callWithDevice(fn, filter, timeout, retry, signal, _attempts + 1);
                 }
             } else {
                 this.returnAvailableDevice(device);
@@ -413,10 +433,11 @@ export class AndroidDeviceManager {
 export class AndroidDeviceTimeoutError extends Error {
     constructor(
         devices: AndroidDevicePool,
+        filter?: (device: AndroidDeviceConnection) => boolean,
     ) {
-        super(devices.devices.length ?
+        super(devices.devices.find(device => !filter || filter.call(null, device)) ?
             'Timeout waiting for a worker to become available' :
-            'No workers available');
+            filter ? 'No matching workers available' : 'No workers available');
     }
 }
 
