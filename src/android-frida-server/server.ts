@@ -3,6 +3,7 @@ import createDebug from 'debug';
 import { v4 as uuidgen } from 'uuid';
 import express from 'express';
 import bodyParser from 'body-parser';
+import * as persist from 'node-persist';
 import { getJwks, Jwt } from '../util/jwt.js';
 import { product } from '../util/product.js';
 import { FRequest, FResult, FridaScriptExports, PackageInfo, SystemInfo } from './types.js';
@@ -10,6 +11,7 @@ import { CoralJwtPayload, NintendoAccountIdTokenJwtPayload } from '../util/types
 import { HttpServer, ResponseError } from '../util/http-server.js';
 import { AndroidDeviceConnection, AndroidDevicePool } from './device.js';
 import MetricsCollector from './metrics.js';
+import { checkUseLimit } from './util.js';
 
 const ZNCA_CLIENT_ID = '71b963c1b7b6d119';
 
@@ -27,6 +29,9 @@ export default class Server extends HttpServer {
     api: FridaScriptExports | null = null;
     package_info: PackageInfo | null = null;
     system_info: SystemInfo | null = null;
+
+    storage: persist.LocalStorage | null = null;
+    limits: [requests: number, period_ms: number] | null = null;
 
     last_result: {
         req: express.Request;
@@ -354,9 +359,13 @@ export default class Server extends HttpServer {
         const errors: {error: string; error_message: string}[] = [];
 
         const hash_method = '' + data.hash_method as '1' | '2';
+        let jwt: Jwt<NintendoAccountIdTokenJwtPayload | CoralJwtPayload> | null = null;
 
         try {
-            await this.validateToken(req, data.token, hash_method, errors);
+            let sig: Buffer;
+            [jwt, sig] = Jwt.decode<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>(data.token);
+
+            await this.validateToken(req, jwt, sig, hash_method, errors);
         } catch (err) {
             if (this.validate_tokens) errors.push({error: 'invalid_token', error_message: (err as Error).message});
             debug('Error validating token from %s, continuing anyway', req.ip, err);
@@ -389,14 +398,17 @@ export default class Server extends HttpServer {
             error.data.errors = errors;
             throw error;
         }
+
+        if (this.storage) {
+            await checkUseLimit(this.storage, 'f', jwt?.payload.sub.toString() ?? 'null', req,
+                !!this.limits, this.limits ?? undefined);
+        }
     }
 
     async validateToken(
-        req: express.Request, token: string, hash_method: '1' | '2',
-        _errors: {error: string; error_message: string}[]
+        req: express.Request, jwt: Jwt<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>, sig: Buffer,
+        hash_method: '1' | '2', _errors: {error: string; error_message: string}[],
     ) {
-        const [jwt, sig] = Jwt.decode<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>(token);
-
         const check_signature = jwt.payload.iss === 'https://accounts.nintendo.com';
 
         if (hash_method === '1' && jwt.payload.iss !== 'https://accounts.nintendo.com') {

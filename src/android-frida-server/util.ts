@@ -4,14 +4,16 @@ import * as child_process from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as util from 'node:util';
 import createDebug from 'debug';
-import getPaths from 'env-paths';
 import mkdirp from 'mkdirp';
+import * as persist from 'node-persist';
+import express from 'express';
+import { ResponseError } from '../util/http-server.js';
+import { paths } from '../util/storage.js';
 
 const debug = createDebug('nxapi:znca-api:android-frida-server:util');
 
 const execFile = util.promisify(child_process.execFile);
 
-const paths = getPaths('nxapi');
 const script_dir = path.join(paths.temp, 'android-znca-api-server');
 
 await mkdirp(script_dir);
@@ -80,4 +82,29 @@ export async function getFridaScript(script_path: string | URL) {
     const script = wrapper[0] + script_cjs + wrapper[1] + init_script;
 
     return script;
+}
+
+export const LIMIT_REQUESTS = 4;
+export const LIMIT_PERIOD = 60 * 60 * 1000; // 60 minutes
+
+type RateLimitAttempts = number[];
+
+export async function checkUseLimit(
+    storage: persist.LocalStorage,
+    key: string, user: string, req: express.Request,
+    /** Set to false to count the attempt but ignore the limit */ ratelimit = true,
+    limits: [requests: number, period_ms: number] = [LIMIT_REQUESTS, LIMIT_PERIOD],
+) {
+    let attempts: RateLimitAttempts = await storage.getItem('RateLimitAttempts-' + key + '.' + user) ?? [];
+    attempts = attempts.filter(a => a >= Date.now() - limits[1]);
+
+    if (ratelimit && attempts.length >= limits[0]) {
+        debug('User %s from %s (%s) exceeded rate limit', user, req.ips, req.headers['user-agent'], attempts);
+        throw new ResponseError(429, 'rate_limit', 'Too many attempts to authenticate');
+    }
+
+    attempts.unshift(Date.now());
+    await storage.setItem('RateLimitAttempts-' + key + '.' + user, attempts);
+
+    debug('rate limit', user, req.ips, attempts);
 }

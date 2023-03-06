@@ -9,6 +9,7 @@ import type { Arguments as ParentArguments } from './index.js';
 import { ArgumentsCamelCase, Argv, YargsArguments } from '../util/yargs.js';
 import { parseListenAddress } from '../util/net.js';
 import MetricsCollector from '../android-frida-server/metrics.js';
+import { initStorage, paths } from '../util/storage.js';
 
 const debug = createDebug('cli:android-frida-server');
 
@@ -46,6 +47,9 @@ export function builder(yargs: Argv<ParentArguments>) {
         describe: 'Validate tokens before passing them to znca',
         type: 'boolean',
         default: true,
+    }).option('rate-limit', {
+        describe: 'Per-user rate limit (requests/period_ms)',
+        type: 'string',
     }).option('resolve-multiple-devices', {
         type: 'boolean',
         default: false,
@@ -158,6 +162,15 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
     const server = new Server(device_pool, metrics);
     server.validate_tokens = argv.validateTokens;
     server.strict_validate = argv.strictValidate;
+
+    server.storage = await initStorage(process.env.NXAPI_DATA_PATH ?? paths.data);
+
+    if (argv.rateLimit) {
+        const match = argv.rateLimit.match(/(\d+)\/(\d+)/);
+        if (!match) throw new Error('Invalid --rate-limit value');
+
+        server.limits = [parseInt(match[1]), parseInt(match[2])];
+    }
 
     const onexit = (code: number | NodeJS.Signals) => {
         process.removeListener('exit', onexit);
