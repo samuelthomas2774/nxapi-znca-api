@@ -76,6 +76,8 @@ export default class Server extends HttpServer {
             this.handleHealthRequest(req, res)));
         app.get('/api/znca/devices', this.createApiRequestHandler((req, res) =>
             this.handleDevicesRequest(req, res)));
+        app.get('/api/znca/config', this.createApiRequestHandler((req, res) =>
+            this.handleConfigRequest(req, res)));
 
         if (this.metrics) {
             app.get('/metrics', this.createApiRequestHandler(() => this.metrics!.handleMetricsRequest()));
@@ -109,6 +111,45 @@ export default class Server extends HttpServer {
             worker_count: this.devices!.devices.length,
             available_count: this.devices!.available.length,
             queue: this.devices!.waiting.length,
+        };
+    }
+
+    async handleConfigRequest(req: express.Request, res: express.Response) {
+        const android_package_info =
+            this.devices ? this.devices.devices.map(d => d.package_info).sort((a, b) => b.build - a.build) :
+            this.package_info ? [this.package_info] : null;
+        const latest = android_package_info?.[0];
+        android_package_info?.reverse();
+
+        if (!latest) {
+            throw new ResponseError(500, 'unknown_error', 'No workers available');
+        }
+
+        const versions: (PackageInfo & {
+            platform: string;
+            worker_count: number;
+        })[] = [];
+
+        for (const package_info of android_package_info) {
+            const version = versions.find(v => v.platform === 'Android' &&
+                v.name === package_info.name && v.build === package_info.build);
+
+            if (version) {
+                version.worker_count++;
+                continue;
+            }
+
+            versions.push({
+                platform: 'Android',
+                ...package_info,
+                worker_count: 1,
+            });
+        }
+
+        return {
+            versions,
+            // imink API compatibility
+            nso_version: latest.version,
         };
     }
 
