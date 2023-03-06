@@ -212,7 +212,7 @@ export default class Server extends HttpServer {
 
         return this.callWithFridaScript(req, res, async (api, queue, attach, device) => {
             debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH',
-                device?.device.id, (device?.package_info ?? this.package_info)?.version);
+                device?.device.id, (device?.package_info ?? this.package_info)?.version, requested_version);
 
             const result = data.hash_method === '2' ?
                 await api.genAudioH2(data.token, timestamp, request_id) :
