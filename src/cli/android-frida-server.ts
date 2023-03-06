@@ -50,6 +50,9 @@ export function builder(yargs: Argv<ParentArguments>) {
     }).option('rate-limit', {
         describe: 'Per-user rate limit (requests/period_ms)',
         type: 'string',
+    }).option('rate-limit-webservice', {
+        describe: 'Per-user rate limit (requests/period_ms)',
+        type: 'string',
     }).option('resolve-multiple-devices', {
         type: 'boolean',
         default: false,
@@ -169,7 +172,14 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
         const match = argv.rateLimit.match(/(\d+)\/(\d+)/);
         if (!match) throw new Error('Invalid --rate-limit value');
 
-        server.limits = [parseInt(match[1]), parseInt(match[2])];
+        server.limits_coral = [parseInt(match[1]), parseInt(match[2])];
+        server.limits_webservice = server.limits_coral;
+    }
+    if (argv.rateLimitWebservice) {
+        const match = argv.rateLimitWebservice.match(/(\d+)\/(\d+)/);
+        if (!match) throw new Error('Invalid --rate-limit value');
+
+        server.limits_webservice = [parseInt(match[1]), parseInt(match[2])];
     }
 
     const onexit = (code: number | NodeJS.Signals) => {

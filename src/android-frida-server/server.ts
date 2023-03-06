@@ -31,7 +31,8 @@ export default class Server extends HttpServer {
     system_info: SystemInfo | null = null;
 
     storage: persist.LocalStorage | null = null;
-    limits: [requests: number, period_ms: number] | null = null;
+    limits_coral: [requests: number, period_ms: number] | null = null;
+    limits_webservice: [requests: number, period_ms: number] | null = null;
 
     last_result: {
         req: express.Request;
@@ -400,8 +401,10 @@ export default class Server extends HttpServer {
         }
 
         if (this.storage) {
-            await checkUseLimit(this.storage, 'f', jwt?.payload.sub.toString() ?? 'null', req,
-                !!this.limits, this.limits ?? undefined);
+            const limits = hash_method === '1' ? this.limits_coral : this.limits_webservice;
+
+            await checkUseLimit(this.storage, 'f_' + hash_method, jwt?.payload.sub.toString() ?? 'null', req,
+                !!limits, limits ?? undefined);
         }
     }
 
