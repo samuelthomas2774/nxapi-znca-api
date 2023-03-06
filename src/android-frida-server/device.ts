@@ -296,13 +296,13 @@ export class AndroidDeviceManager {
 
         this.devices.remove(this.device);
 
-        this.device.session.detach();
-        this.device.script.unload();
         this.device.handleDeviceDisconnected();
 
         debug('Releasing wake lock', this.device_name);
 
         try {
+            await this.device.script.unload();
+            await this.device.session.detach();
             await execScript(this.device_name, '/data/local/tmp/android-znca-api-server-shutdown.sh',
                 this.exec_command, this.adb_path);
         } catch (err) {
