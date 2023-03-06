@@ -12,7 +12,7 @@ export default class MetricsCollector {
 
         this.version.set({version, revision: git?.revision}, 1);
 
-        for (const status of [200, 400, 500]) {
+        for (const status of [200, 400, 406, 249, 500, 503]) {
             this.total_f_requests.inc({status, type: '1'}, 0);
             this.total_f_requests.inc({status, type: '2'}, 0);
         }
@@ -20,11 +20,15 @@ export default class MetricsCollector {
             this.total_f_request_duration.inc({status: 200, type: '1', state}, 0);
             this.total_f_request_duration.inc({status: 200, type: '2', state}, 0);
         }
-        this.total_f_request_duration.inc({status: 400, type: '1', state: 'validate'}, 0);
-        this.total_f_request_duration.inc({status: 400, type: '2', state: 'validate'}, 0);
-        for (const state of ['validate', 'queue']) {
-            this.total_f_request_duration.inc({status: 500, type: '1', state}, 0);
-            this.total_f_request_duration.inc({status: 500, type: '2', state}, 0);
+        for (const status of [400, 429]) {
+            this.total_f_request_duration.inc({status, type: '1', state: 'validate'}, 0);
+            this.total_f_request_duration.inc({status, type: '2', state: 'validate'}, 0);
+        }
+        for (const status of [406, 500, 503]) {
+            for (const state of ['validate', 'queue']) {
+                this.total_f_request_duration.inc({status, type: '1', state}, 0);
+                this.total_f_request_duration.inc({status, type: '2', state}, 0);
+            }
         }
     }
 

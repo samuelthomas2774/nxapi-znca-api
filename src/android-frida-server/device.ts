@@ -3,6 +3,7 @@ import frida, { Device, Script, Session } from 'frida';
 import * as child_process from 'node:child_process';
 import * as dns from 'node:dns/promises';
 import * as util from 'node:util';
+import { ResponseError } from '../util/http-server.js';
 import MetricsCollector from './metrics.js';
 import { frida_script, setup_script, shutdown_script } from './scripts.js';
 import { FridaScriptExports, PackageInfo, StartMethod, SystemInfo } from './types.js';
@@ -430,14 +431,18 @@ export class AndroidDeviceManager {
     }
 }
 
-export class AndroidDeviceTimeoutError extends Error {
+export class AndroidDeviceTimeoutError extends ResponseError {
     constructor(
         devices: AndroidDevicePool,
         filter?: (device: AndroidDeviceConnection) => boolean,
     ) {
-        super(devices.devices.find(device => !filter || filter.call(null, device)) ?
-            'Timeout waiting for a worker to become available' :
-            filter ? 'No matching workers available' : 'No workers available');
+        if (devices.devices.find(device => !filter || filter.call(null, device))) {
+            super(503, 'service_unavailable', 'Timeout waiting for a worker to become available');
+        } else if (filter) {
+            super(406, 'unsupported_version', 'No matching workers available');
+        } else {
+            super(503, 'service_unavailable', 'No workers available');
+        }
     }
 }
 
