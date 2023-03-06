@@ -165,8 +165,7 @@ export default class Server extends HttpServer {
         if (req.headers['x-znca-platform'] && req.headers['x-znca-platform'] !== 'Android') {
             throw new ResponseError(400, 'unsupported_platform', 'Unsupported X-znca-Platform');
         }
-        const requested_version = req.headers['x-znca-version']?.toString() ??
-            (req.headers['user-agent']?.match(/^nxapi\/1\.[4-6]\.0\b/) ? '2.4.0' : '2.5.0');
+        const requested_version = req.headers['x-znca-version']?.toString() ?? null;
         if (requested_version && !requested_version.match(/^\d+\.\d+\.\d+$/)) {
             throw new ResponseError(400, 'invalid_request', 'Invalid X-znca-Version value');
         }
