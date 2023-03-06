@@ -12,6 +12,12 @@ services:
       - /system/bin/frida-server
       - --start-method
       - ${ZNCA_API_APP_START_METHOD:-spawn}
+      - --rate-limit
+      # 10 requests/60 minutes
+      - ${ZNCA_API_RATE_LIMIT_CORAL:-10/3600}
+      - --rate-limit-webservice
+      # 20 requests/30 minutes
+      - ${ZNCA_API_RATE_LIMIT_WEBSERVICE:-20/1800}
       - --listen
       - '[::]:80'
       - --metrics

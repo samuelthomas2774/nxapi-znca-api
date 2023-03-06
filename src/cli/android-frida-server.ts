@@ -172,15 +172,18 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
         const match = argv.rateLimit.match(/(\d+)\/(\d+)/);
         if (!match) throw new Error('Invalid --rate-limit value');
 
-        server.limits_coral = [parseInt(match[1]), parseInt(match[2])];
+        server.limits_coral = [parseInt(match[1]), parseInt(match[2]) * 1000];
         server.limits_webservice = server.limits_coral;
     }
     if (argv.rateLimitWebservice) {
         const match = argv.rateLimitWebservice.match(/(\d+)\/(\d+)/);
-        if (!match) throw new Error('Invalid --rate-limit value');
+        if (!match) throw new Error('Invalid --rate-limit-webservice value');
 
-        server.limits_webservice = [parseInt(match[1]), parseInt(match[2])];
+        server.limits_webservice = [parseInt(match[1]), parseInt(match[2]) * 1000];
     }
+
+    debug('coral auth rate limit', server.limits_coral);
+    debug('web service auth rate limit', server.limits_webservice);
 
     const onexit = (code: number | NodeJS.Signals) => {
         process.removeListener('exit', onexit);
