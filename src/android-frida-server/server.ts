@@ -3,7 +3,7 @@ import createDebug from 'debug';
 import { v4 as uuidgen } from 'uuid';
 import express from 'express';
 import bodyParser from 'body-parser';
-import * as persist from 'node-persist';
+import persist from 'node-persist';
 import { getJwks, Jwt } from '../util/jwt.js';
 import { product } from '../util/product.js';
 import { FRequest, FResult, FridaScriptExports, PackageInfo, SystemInfo } from './types.js';

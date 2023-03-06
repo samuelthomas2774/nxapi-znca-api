@@ -5,7 +5,7 @@ import * as fs from 'node:fs/promises';
 import * as util from 'node:util';
 import createDebug from 'debug';
 import mkdirp from 'mkdirp';
-import * as persist from 'node-persist';
+import persist from 'node-persist';
 import express from 'express';
 import { ResponseError } from '../util/http-server.js';
 import { paths } from '../util/storage.js';

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import getPaths from 'env-paths';
-import * as persist from 'node-persist';
+import persist from 'node-persist';
 
 export const paths = getPaths('nxapi');
 
