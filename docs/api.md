@@ -59,7 +59,7 @@ interface ZncaApiRequest {
      */
     request_id?: string;
     /**
-     * The user's Nintendo Account ID.
+     * The user's Nintendo Account ID from https://api.accounts.nintendo.com/2.0.0/users/me (`id`).
      *
      * For Coral authentication (hash method 1) this will be set automatically from the `token` if not provided.
      * (Although providing it is recommended.)
@@ -68,7 +68,7 @@ interface ZncaApiRequest {
      */
     na_id?: string;
     /**
-     * The user's Coral user ID.
+     * The user's Coral user ID from Account/Login or Account/GetToken (`result.user.id`).
      *
      * Only used for web service authentication (hash method 2).
      *
