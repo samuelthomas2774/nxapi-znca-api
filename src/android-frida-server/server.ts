@@ -17,6 +17,8 @@ const ZNCA_CLIENT_ID = '71b963c1b7b6d119';
 
 const debug = createDebug('nxapi:znca-api:android-frida-server:api');
 
+const WarningSymbol = Symbol('Warning');
+
 export default class Server extends HttpServer {
     validate_tokens = true;
     strict_validate = false;
@@ -170,6 +172,10 @@ export default class Server extends HttpServer {
             throw new ResponseError(400, 'invalid_request', 'Invalid X-znca-Version value');
         }
 
+        const warnings: {error: string; error_message: string}[] = [];
+
+        if (!requested_version) warnings.push({error: 'request_parameter_not_set', error_message: 'The `X-znca-Platform` and `X-znca-Version` headers were not set'});
+
         if (req.body && 'type' in req.body) req.body = {
             hash_method:
                 req.body.type === 'nso' ? '1' :
@@ -197,7 +203,7 @@ export default class Server extends HttpServer {
         }
 
         try {
-            await this.validateFRequest(req, data);
+            await this.validateFRequest(req, data, warnings);
         } catch (err) {
             debug('Error validating request from %s', req.ip, err);
             res.setHeader('Server-Timing', 'validate;dur=' + (Date.now() - start));
@@ -255,6 +261,8 @@ export default class Server extends HttpServer {
                 f: result.f,
                 timestamp: data.timestamp ? undefined : result.timestamp,
                 request_id: data.request_id ? undefined : request_id,
+
+                warnings: warnings.length ? warnings : undefined,
             };
 
             res.setHeader('Server-Timing',
@@ -379,8 +387,11 @@ export default class Server extends HttpServer {
         }
     }
 
-    async validateFRequest(req: express.Request, data: FRequest) {
-        const errors: {error: string; error_message: string}[] = [];
+    async validateFRequest(
+        req: express.Request, data: FRequest,
+        warnings?: {error: string; error_message: string}[],
+    ) {
+        const errors: {error: string; error_message: string; [WarningSymbol]?: boolean}[] = [];
 
         const hash_method = '' + data.hash_method as '1' | '2';
         let jwt: Jwt<NintendoAccountIdTokenJwtPayload | CoralJwtPayload> | null = null;
@@ -389,50 +400,68 @@ export default class Server extends HttpServer {
             let sig: Buffer;
             [jwt, sig] = Jwt.decode<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>(data.token);
 
-            await this.validateToken(req, jwt, sig, hash_method, errors);
+            await this.validateToken(req, jwt, sig, hash_method, errors, warnings);
         } catch (err) {
-            if (this.validate_tokens) errors.push({error: 'invalid_token', error_message: (err as Error).message});
+            errors.push({error: 'invalid_token', error_message: (err as Error).message, [WarningSymbol]: !this.validate_tokens});
             debug('Error validating token from %s, continuing anyway', req.ip, err);
         }
 
-        if (this.strict_validate && 'timestamp' in data) {
+        if ('timestamp' in data) {
             if (!/^\d+$/.test('' + data.timestamp)) {
-                errors.push({error: 'invalid_timestamp', error_message: 'Non-numeric timestamp is not likely to be accepted by the Coral API'});
+                errors.push({error: 'invalid_timestamp', error_message: 'Non-numeric timestamp is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
             } else {
                 // For Android the timestamp should be in milliseconds
                 const timestamp_ms = parseInt('' + data.timestamp);
                 const now_ms = Date.now();
 
                 if (timestamp_ms > now_ms + 10000 || timestamp_ms + 10000 < now_ms) {
-                    errors.push({error: 'invalid_timestamp', error_message: 'Timestamp not matching the Android device is not likely to be accepted by the Coral API'});
+                    errors.push({error: 'invalid_timestamp', error_message: 'Timestamp not matching the Android device is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
+                } else {
+                    errors.push({error: 'invalid_timestamp', error_message: 'Timestamp sent by the client may not exactly match the Android device and is not likely to be accepted by the Coral API', [WarningSymbol]: true});
                 }
             }
         }
 
-        if (this.strict_validate && 'request_id' in data) {
+        if ('request_id' in data) {
             // For Android the request_id should be lowercase hex
             if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/.test('' + data.request_id)) {
-                errors.push({error: 'invalid_request_id', error_message: 'Request ID not a valid lowercase-hex v4 UUID is not likely to be accepted by the Coral API'});
+                errors.push({error: 'invalid_request_id', error_message: 'Request ID not a valid lowercase-hex v4 UUID is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
             }
         }
 
-        if (this.strict_validate && 'na_id' in data) {
+        if ('na_id' in data) {
             if (hash_method === '1' && data.na_id !== jwt?.payload.sub.toString()) {
-                errors.push({error: 'invalid_na_id', error_message: 'Nintendo Account ID not matching the token subject is not likely to be accepted by the Coral API'});
+                errors.push({error: 'invalid_na_id', error_message: 'Nintendo Account ID not matching the token subject is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
+            }
+        } else {
+            if (data.hash_method === '1') {
+                errors.push({error: 'request_parameter_not_set', error_message: 'The `na_id` parameter was not set', [WarningSymbol]: true});
+            }
+            if (data.hash_method === '2') {
+                errors.push({error: 'request_parameter_not_set', error_message: 'The `na_id` parameter was not set, this may cause invalid tokens', [WarningSymbol]: !this.strict_validate});
             }
         }
 
         // coral_user_id is not required for hash method 1
-        if (this.strict_validate && 'coral_user_id' in data && hash_method === '2') {
+        if ('coral_user_id' in data && hash_method === '2') {
             if (data.coral_user_id !== jwt?.payload.sub.toString()) {
-                errors.push({error: 'invalid_coral_user_id', error_message: 'Coral user ID not matching the token subject is not likely to be accepted by the Coral API'});
+                errors.push({error: 'invalid_coral_user_id', error_message: 'Coral user ID not matching the token subject is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
             }
+        } else if (!('coral_user_id' in data) && hash_method === '2') {
+            errors.push({error: 'request_parameter_not_set', error_message: 'The `coral_user_id` parameter was not set', [WarningSymbol]: true});
+        }
+
+        let index;
+        while ((index = errors.findIndex(e => e[WarningSymbol])) >= 0) {
+            warnings?.push(errors[index]);
+            errors.splice(index, 1);
         }
 
         if (errors.length) {
             const error = new ResponseError(400, 'invalid_request',
                 errors.length + ' error' + (errors.length === 1 ? '' : 's') + ' validating request');
             error.data.errors = errors;
+            error.data.warnings = warnings;
             throw error;
         }
 
@@ -447,6 +476,7 @@ export default class Server extends HttpServer {
     async validateToken(
         req: express.Request, jwt: Jwt<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>, sig: Buffer,
         hash_method: '1' | '2', _errors: {error: string; error_message: string}[],
+        warnings?: {error: string; error_message: string}[],
     ) {
         const check_signature = jwt.payload.iss === 'https://accounts.nintendo.com';
 
@@ -463,6 +493,7 @@ export default class Server extends HttpServer {
         if (jwt.payload.exp <= (Date.now() / 1000)) {
             // throw new Error('Token expired');
             debug('Token from %s expired', req.ip);
+            warnings?.push({error: 'invalid_token', error_message: 'Token expired'});
         }
 
         const jwks = jwt.header.kid &&

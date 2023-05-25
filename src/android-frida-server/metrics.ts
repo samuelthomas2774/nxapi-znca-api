@@ -12,7 +12,7 @@ export default class MetricsCollector {
 
         this.version.set({version, revision: git?.revision}, 1);
 
-        for (const status of [200, 400, 406, 249, 500, 503]) {
+        for (const status of [200, 400, 406, 429, 500, 503]) {
             this.total_f_requests.inc({status, type: '1'}, 0);
             this.total_f_requests.inc({status, type: '2'}, 0);
         }
