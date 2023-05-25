@@ -58,6 +58,23 @@ interface ZncaApiRequest {
      * A random (v4) UUID.
      */
     request_id?: string;
+    /**
+     * The user's Nintendo Account ID.
+     *
+     * For Coral authentication (hash method 1) this will be set automatically from the `token` if not provided.
+     * (Although providing it is recommended.)
+     * For web service authentication (hash method 2) this must be provided. If it is not provided an empty string
+     * will be used, which will cause the resulting f token to be rejected if/when Nintendo starts validating this.
+     */
+    na_id?: string;
+    /**
+     * The user's Coral user ID.
+     *
+     * Only used for web service authentication (hash method 2).
+     *
+     * This will be set automatically from the `token` if not provided. (Providing it is recommended.)
+     */
+    coral_user_id?: string;
 }
 ```
 
