@@ -27,6 +27,8 @@ export interface FRequest {
     token: string;
     timestamp?: string | number;
     request_id?: string;
+    na_id?: string;
+    coral_user_id?: string;
 }
 
 export {

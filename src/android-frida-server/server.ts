@@ -189,7 +189,9 @@ export default class Server extends HttpServer {
             (data.hash_method !== '1' && data.hash_method !== '2') ||
             typeof data.token !== 'string' ||
             (data.timestamp && typeof data.timestamp !== 'string' && typeof data.timestamp !== 'number') ||
-            (data.request_id && typeof data.request_id !== 'string')
+            (data.request_id && typeof data.request_id !== 'string') ||
+            ('na_id' in data && typeof data.na_id !== 'string') ||
+            ('coral_user_id' in data && (typeof data.coral_user_id !== 'string' || !/^\d+$/.test(data.coral_user_id)))
         ) {
             throw new ResponseError(400, 'invalid_request');
         }
@@ -214,18 +216,30 @@ export default class Server extends HttpServer {
             debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH',
                 device?.device.id, (device?.package_info ?? this.package_info)?.version, requested_version);
 
-            let jwt_sub: string | null = null;
+            let na_id = data.na_id ?? '';
+            let coral_user_id = data.coral_user_id ?? '';
 
             try {
-                const [jwt, sig] = Jwt.decode(data.token);
-                jwt_sub = '' + jwt.payload.sub;
+                if (data.hash_method === '1' && !na_id) {
+                    debug('na_id not set, reading from token');
+                    const [jwt, sig] = Jwt.decode(data.token);
+                    na_id = '' + jwt.payload.sub;
+                }
+                if (data.hash_method === '2' && !na_id) {
+                    debug('na_id not set, using empty string');
+                }
+                if (data.hash_method === '2' && !coral_user_id) {
+                    debug('coral_user_id not set, reading from token');
+                    const [jwt, sig] = Jwt.decode(data.token);
+                    coral_user_id = '' + jwt.payload.sub;
+                }
             } catch (err) {}
 
             const result = data.hash_method === '2' ?
                 await api.genAudioH2(data.token, timestamp, request_id,
-                    jwt_sub ? {na_id: '', coral_user_id: jwt_sub, coral_token: data.token} : undefined) :
+                    {na_id, coral_user_id, coral_token: data.token}) :
                 await api.genAudioH(data.token, timestamp, request_id,
-                    jwt_sub ? {na_id: jwt_sub, na_id_token: data.token} : undefined);
+                    {na_id, na_id_token: data.token});
 
             this.last_result = {
                 req, data, result, time: new Date(),
@@ -399,6 +413,19 @@ export default class Server extends HttpServer {
             // For Android the request_id should be lowercase hex
             if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/.test('' + data.request_id)) {
                 errors.push({error: 'invalid_request_id', error_message: 'Request ID not a valid lowercase-hex v4 UUID is not likely to be accepted by the Coral API'});
+            }
+        }
+
+        if (this.strict_validate && 'na_id' in data) {
+            if (hash_method === '1' && data.na_id !== jwt?.payload.sub.toString()) {
+                errors.push({error: 'invalid_na_id', error_message: 'Nintendo Account ID not matching the token subject is not likely to be accepted by the Coral API'});
+            }
+        }
+
+        // coral_user_id is not required for hash method 1
+        if (this.strict_validate && 'coral_user_id' in data && hash_method === '2') {
+            if (data.coral_user_id !== jwt?.payload.sub.toString()) {
+                errors.push({error: 'invalid_coral_user_id', error_message: 'Coral user ID not matching the token subject is not likely to be accepted by the Coral API'});
             }
         }
 

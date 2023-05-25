@@ -99,12 +99,12 @@ export async function checkUseLimit(
     attempts = attempts.filter(a => a >= Date.now() - limits[1]);
 
     if (ratelimit && attempts.length >= limits[0]) {
-        debug('User %s from %s (%s) exceeded rate limit', user, req.ips, req.headers['user-agent'], attempts);
+        debug('User %s from %s (%s) exceeded rate limit', user, req.ips, req.headers['user-agent'], key, attempts);
         throw new ResponseError(429, 'rate_limit', 'Too many attempts to authenticate');
     }
 
     attempts.unshift(Date.now());
     await storage.setItem('RateLimitAttempts-' + key + '.' + user, attempts);
 
-    debug('rate limit', user, req.ips, attempts);
+    debug('rate limit', key, user, req.ips, attempts);
 }
