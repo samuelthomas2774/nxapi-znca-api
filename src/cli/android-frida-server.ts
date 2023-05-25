@@ -236,9 +236,7 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
 
         const user_data: UserData1 & UserData2 = {
             na_id: '0000000000000000',
-            na_access_token: 'access_token',
             na_id_token: 'id_token',
-            na_session_token: 'session_token',
             coral_user_id: '0',
             coral_token: 'id_token',
         };

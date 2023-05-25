@@ -121,8 +121,6 @@ export interface FResult {
 export interface UserData1 {
     na_id: string;
     na_id_token: string;
-    na_access_token: string;
-    na_session_token: string;
 }
 export interface UserData2 {
     coral_token: string;
@@ -130,14 +128,7 @@ export interface UserData2 {
     na_id: string;
 }
 
-let user_data: UserData1 | UserData2 | null = {
-    na_id: null,
-    na_id_token: null,
-    na_access_token: null,
-    na_session_token: null,
-    coral_token: null,
-    coral_user_id: null,
-} as any;
+let user_data: UserData1 | UserData2 | null = null;
 
 export function setUserDataForGenAudioH(data: UserData1) {
     user_data = data;
@@ -205,10 +196,6 @@ export function initialiseJavaPatches(version: number) {
                 const [key, default_value] = args;
 
                 if (user_data) {
-                    if (key === 'SessionToken' && 'na_session_token' in user_data) return user_data.na_session_token;
-                    if (key === 'AccessToken' && 'na_access_token' in user_data) return user_data.na_access_token;
-                    if (key === 'IDToken' && 'na_id_token' in user_data) return user_data.na_id_token;
-
                     if (key === 'CoralNAUserKey') return JSON.stringify({
                         id: '0000000000000000',
                         nickname: '-',
@@ -237,16 +224,6 @@ export function initialiseJavaPatches(version: number) {
 
                 return original(...args);
             });
-
-            patchJavaMethod(SharedPreferences, 'getBoolean', (original, args) => original(...args));
-            patchJavaMethod(SharedPreferences, 'getInt', (original, args) => original(...args));
-
-            // android.content.SharedPreferences$Editor
-            const SharedPreferences$Editor = Java.use('android.app.SharedPreferencesImpl$EditorImpl');
-
-            patchJavaMethod(SharedPreferences$Editor, 'putString', (original, args) => original(...args));
-            patchJavaMethod(SharedPreferences$Editor, 'putBoolean', (original, args) => original(...args));
-            patchJavaMethod(SharedPreferences$Editor, 'putInt', (original, args) => original(...args));
         });
     }
 }

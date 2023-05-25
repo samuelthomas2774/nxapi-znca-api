@@ -225,7 +225,7 @@ export default class Server extends HttpServer {
                 await api.genAudioH2(data.token, timestamp, request_id,
                     jwt_sub ? {na_id: '', coral_user_id: jwt_sub, coral_token: data.token} : undefined) :
                 await api.genAudioH(data.token, timestamp, request_id,
-                    jwt_sub ? {na_id: jwt_sub, na_access_token: '', na_id_token: data.token, na_session_token: ''} : undefined);
+                    jwt_sub ? {na_id: jwt_sub, na_id_token: data.token} : undefined);
 
             this.last_result = {
                 req, data, result, time: new Date(),
