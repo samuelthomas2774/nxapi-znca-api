@@ -10,6 +10,8 @@ function perform<T>(callback: () => T | Promise<T>) {
                     rs(callback());
                 } catch (err) {
                     rj(err);
+                } finally {
+                    user_data = null;
                 }
             });
         });
@@ -116,17 +118,151 @@ export interface FResult {
     dp: number;
 }
 
+export interface UserData1 {
+    na_id: string;
+    na_id_token: string;
+    na_access_token: string;
+    na_session_token: string;
+}
+export interface UserData2 {
+    coral_token: string;
+    coral_user_id: string;
+    na_id: string;
+}
+
+let user_data: UserData1 | UserData2 | null = {
+    na_id: null,
+    na_id_token: null,
+    na_access_token: null,
+    na_session_token: null,
+    coral_token: null,
+    coral_user_id: null,
+} as any;
+
+export function setUserDataForGenAudioH(data: UserData1) {
+    user_data = data;
+}
+export function setUserDataForGenAudioH2(data: UserData2) {
+    user_data = data;
+}
+
+function patchJavaMethod<A extends unknown[], R>(
+    cls: any, method: string,
+    callback: (original: (...args: A) => R, args: A) => R,
+) {
+    cls[method].implementation = function (...args: A) {
+        let original = (...args: A) => {
+            return this[method](...args);
+        };
+
+        try {
+            return callback.call(null, original, args);
+        } catch (err) {
+            console.log('Error in patched method', cls, method, err);
+        }
+    };
+}
+
+export function initialiseJavaPatches(version: number) {
+    // 2.4.0
+    if (version >= 3467) {
+        return perform(() => {
+            const e = Java.use('com.nintendo.coral.core.network.e');
+
+            patchJavaMethod(e, 'b', original => {
+                return user_data && 'coral_token' in user_data ? user_data.coral_token : original();
+            });
+
+            const NAUser = Java.use('com.nintendo.coral.core.entity.NAUser');
+
+            patchJavaMethod(NAUser, 'c', original => {
+                return user_data ? user_data.na_id : original();
+            });
+
+            const m = Java.use('com.nintendo.nx.nasdk.m');
+
+            patchJavaMethod(m, 'd', original => {
+                return user_data && 'na_id_token' in user_data ? user_data.na_id_token : original();
+            });
+
+            /** com.nintendo.coral.models.AccountModel */
+            const AccountModel = Java.use('za.h');
+
+            patchJavaMethod(AccountModel, 'v', original => {
+                const coral_user: any = original();
+
+                if (user_data && 'coral_user_id' in user_data) {
+                    coral_user.a.value = int64(user_data.coral_user_id);
+                }
+
+                return coral_user;
+            });
+
+            // android.content.SharedPreferences
+            const SharedPreferences = Java.use('android.app.SharedPreferencesImpl');
+
+            patchJavaMethod(SharedPreferences, 'getString', (original, args) => {
+                const [key, default_value] = args;
+
+                if (user_data) {
+                    if (key === 'SessionToken' && 'na_session_token' in user_data) return user_data.na_session_token;
+                    if (key === 'AccessToken' && 'na_access_token' in user_data) return user_data.na_access_token;
+                    if (key === 'IDToken' && 'na_id_token' in user_data) return user_data.na_id_token;
+
+                    if (key === 'CoralNAUserKey') return JSON.stringify({
+                        id: '0000000000000000',
+                        nickname: '-',
+                        country: 'GB',
+                        birthday: '2000-01-01',
+                        language: 'en-GB',
+                        screenName: '•••@••• / •••',
+                        mii: null,
+                    });
+
+                    if (key === 'CoralUserKeyV2') return JSON.stringify({
+                        id: 0,
+                        nsaId: '0000000000000000',
+                        name: '-',
+                        imageUri: 'https://cdn-image.baas.nintendo.com/0/0000000000000000',
+                        supportId: '0000-0000-0000-0000-0000-0',
+                        links: {
+                            nintendoAccount: { membership: { active: true } },
+                            friendCode: { regenerable: true, regenerableAt: 0, id: '0000-0000-0000' },
+                        },
+                        etag: '"0000000000000000"',
+                        permissions: { presence: 'FRIENDS' },
+                        presence: { state: 'OFFLINE', updatedAt: 0, logoutAt: 0, game: {} },
+                    });
+                }
+
+                return original(...args);
+            });
+
+            patchJavaMethod(SharedPreferences, 'getBoolean', (original, args) => original(...args));
+            patchJavaMethod(SharedPreferences, 'getInt', (original, args) => original(...args));
+
+            // android.content.SharedPreferences$Editor
+            const SharedPreferences$Editor = Java.use('android.app.SharedPreferencesImpl$EditorImpl');
+
+            patchJavaMethod(SharedPreferences$Editor, 'putString', (original, args) => original(...args));
+            patchJavaMethod(SharedPreferences$Editor, 'putBoolean', (original, args) => original(...args));
+            patchJavaMethod(SharedPreferences$Editor, 'putInt', (original, args) => original(...args));
+        });
+    }
+}
+
 export function genAudioH(
-    token: string, timestamp: string | number | undefined, request_id: string
+    token: string, timestamp: string | number | undefined, request_id: string,
+    user_data?: UserData1,
 ): Promise<FResult> {
     const called = Date.now();
 
     return perform(() => {
+        if (user_data) setUserDataForGenAudioH(user_data);
+
         const start = Date.now();
 
         const libvoip = Java.use('com.nintendo.coral.core.services.voip.LibvoipJni');
-        const context = Java.use('android.app.ActivityThread').currentApplication().getApplicationContext();
-        libvoip.init(context);
 
         if (!timestamp) timestamp = Date.now();
 
@@ -144,16 +280,17 @@ export function genAudioH(
 }
 
 export function genAudioH2(
-    token: string, timestamp: string | number | undefined, request_id: string
+    token: string, timestamp: string | number | undefined, request_id: string,
+    user_data?: UserData2,
 ): Promise<FResult> {
     const called = Date.now();
 
     return perform(() => {
+        if (user_data) setUserDataForGenAudioH2(user_data);
+
         const start = Date.now();
 
         const libvoip = Java.use('com.nintendo.coral.core.services.voip.LibvoipJni');
-        const context = Java.use('android.app.ActivityThread').currentApplication().getApplicationContext();
-        libvoip.init(context);
 
         if (!timestamp) timestamp = Date.now();
 

@@ -10,6 +10,7 @@ import { ArgumentsCamelCase, Argv, YargsArguments } from '../util/yargs.js';
 import { parseListenAddress } from '../util/net.js';
 import MetricsCollector from '../android-frida-server/metrics.js';
 import { initStorage, paths } from '../util/storage.js';
+import { UserData1, UserData2 } from '../android-frida-server/frida-script.cjs';
 
 const debug = createDebug('cli:android-frida-server');
 
@@ -225,6 +226,31 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
             return device.api.genAudioH('id_token', 'timestamp', 'request_id');
         });
         debug('Test returned', result);
+        debug('Test gen_audio_h2');
+        const result_2 = await device_pool.callWithDevice(device => {
+            return device.api.genAudioH2('id_token', 'timestamp', 'request_id');
+        });
+        debug('Test returned', result_2);
+
+        const user_data: UserData1 & UserData2 = {
+            na_id: '0000000000000000',
+            na_access_token: 'access_token',
+            na_id_token: 'id_token',
+            na_session_token: 'session_token',
+            coral_user_id: '0',
+            coral_token: 'id_token',
+        };
+
+        debug('Test gen_audio_h with user data', user_data);
+        const result_3 = await device_pool.callWithDevice(device => {
+            return device.api.genAudioH('id_token', 'timestamp', 'request_id', user_data);
+        });
+        debug('Test returned', result_3);
+        debug('Test gen_audio_h2 with user data');
+        const result_4 = await device_pool.callWithDevice(device => {
+            return device.api.genAudioH2('id_token', 'timestamp', 'request_id', user_data);
+        });
+        debug('Test returned', result_4);
     } catch (err) {
         debug('Test failed', err);
     }

@@ -61,7 +61,7 @@ interface ZncaApiRequest {
 }
 ```
 
-As the server can support multiple versions of the Nintendo Switch Online app (which generate different `f` values), the `X-znca-Platform` and `X-znca-Version` headers should be used to indicate which version the client is using. These
+As the server can support multiple versions of the Nintendo Switch Online app (which generate different `f` values), the `X-znca-Platform` and `X-znca-Version` headers should be used to indicate which version the client is using.
 
 > Due to changes to Nintendo's API on [23/08/2022](https://github.com/samuelthomas2774/nxapi/discussions/10#discussioncomment-3464443) the `timestamp` parameter should not be sent. If the `timestamp` or `request_id` parameters are not sent their values will be generated and returned in the response. Note that unlike the imink API and [nsotokengen](https://github.com/clovervidia/nsotokengen), only parameters not included in the request will be included in the response.
 

@@ -214,9 +214,18 @@ export default class Server extends HttpServer {
             debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH',
                 device?.device.id, (device?.package_info ?? this.package_info)?.version, requested_version);
 
+            let jwt_sub: string | null = null;
+
+            try {
+                const [jwt, sig] = Jwt.decode(data.token);
+                jwt_sub = '' + jwt.payload.sub;
+            } catch (err) {}
+
             const result = data.hash_method === '2' ?
-                await api.genAudioH2(data.token, timestamp, request_id) :
-                await api.genAudioH(data.token, timestamp, request_id);
+                await api.genAudioH2(data.token, timestamp, request_id,
+                    jwt_sub ? {na_id: '', coral_user_id: jwt_sub, coral_token: data.token} : undefined) :
+                await api.genAudioH(data.token, timestamp, request_id,
+                    jwt_sub ? {na_id: jwt_sub, na_access_token: '', na_id_token: data.token, na_session_token: ''} : undefined);
 
             this.last_result = {
                 req, data, result, time: new Date(),

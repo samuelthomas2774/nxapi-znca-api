@@ -1,8 +1,8 @@
-import createDebug from 'debug';
-import frida, { Device, Script, Session } from 'frida';
 import * as child_process from 'node:child_process';
 import * as dns from 'node:dns/promises';
 import * as util from 'node:util';
+import createDebug from 'debug';
+import frida, { Device, Script, Session } from 'frida';
 import { ResponseError } from '../util/http-server.js';
 import MetricsCollector from './metrics.js';
 import { frida_script, setup_script, shutdown_script } from './scripts.js';
@@ -347,6 +347,8 @@ export class AndroidDeviceManager {
             const package_info = await api.getPackageInfo();
             const system_info = await api.getSystemInfo();
 
+            await api.initialiseJavaPatches(package_info.build);
+
             device = new AndroidDeviceConnection(frida_device, session, script, api, package_info, system_info, {
                 name: hostname ?? device_name,
                 connected_at: new Date().toISOString(),
@@ -371,6 +373,8 @@ export class AndroidDeviceManager {
                 const api = script.exports as FridaScriptExports;
                 const system_info = await api.getSystemInfo();
                 const package_info = await api.getPackageInfo();
+
+                await api.initialiseJavaPatches(package_info.build);
 
                 if (device_manager.destroyed) {
                     device_manager.ready = null;
