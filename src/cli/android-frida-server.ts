@@ -74,6 +74,8 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
         argv.startMethod === 'spawn' ? StartMethod.SPAWN :
         argv.startMethod === 'activity' ? StartMethod.ACTIVITY :
         argv.startMethod === 'service' ? StartMethod.SERVICE :
+        argv.startMethod === 'force-activity' ? StartMethod.FORCE_ACTIVITY :
+        argv.startMethod === 'force-service' ? StartMethod.FORCE_SERVICE :
         StartMethod.NONE;
 
     const metrics = argv.metrics ? new MetricsCollector() : null;

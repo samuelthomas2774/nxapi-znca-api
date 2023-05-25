@@ -34,11 +34,18 @@ else
 fi
 `.trim() : ''}
 
-${(options.start_method === StartMethod.ACTIVITY ? `
+${(options.start_method === StartMethod.FORCE_ACTIVITY || options.start_method === StartMethod.FORCE_SERVICE ? `
+# Stop the app
+killall com.nintendo.znca
+sleep 5
+killall -9 com.nintendo.znca
+` : '').trim()}
+
+${(options.start_method === StartMethod.ACTIVITY || options.start_method === StartMethod.FORCE_ACTIVITY ? `
 # Ensure the app is running
 echo "Starting com.nintendo.znca in foreground"
 am start-activity com.nintendo.znca/com.nintendo.coral.ui.boot.BootActivity
-` : options.start_method === StartMethod.SERVICE ? `
+` : options.start_method === StartMethod.SERVICE || options.start_method === StartMethod.FORCE_SERVICE ? `
 # Ensure the app is running
 echo "Starting com.nintendo.znca"
 am start-foreground-service com.nintendo.znca/com.google.firebase.messaging.FirebaseMessagingService

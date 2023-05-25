@@ -12,6 +12,10 @@ export enum StartMethod {
      * in the background.
      */
     SERVICE,
+    /** Same as ACTIVITY, but kill the app first */
+    FORCE_ACTIVITY,
+    /** Same as SERVICE, but kill the app first */
+    FORCE_SERVICE,
     /** Do not attempt to start the app - if it is not already running the server will fail */
     NONE,
 }

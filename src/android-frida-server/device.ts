@@ -545,11 +545,17 @@ async function attach(
 
         debug('process', process);
 
-        session = await device.attach(process.pid);
-
         if (start_method === StartMethod.SPAWN) {
-            await device.resume(session.pid);
+            await device.resume(process.pid);
         }
+
+        // Wait before attaching to the process
+        // Calling LibvoipJni.init when Frida is loaded can cause issues
+        debug('Waiting 10s to prevent interfering with libvoip init');
+        await new Promise(rs => setTimeout(rs, 10000));
+
+        debug('Attaching to app process');
+        session = await device.attach(process.pid);
     } catch (err) {
         debug('Could not attach to process', err);
         throw new Error('Failed to attach to process');
