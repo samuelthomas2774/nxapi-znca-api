@@ -167,25 +167,14 @@ export default class Server extends HttpServer {
             request_id: req.body.uuid,
         };
 
-        if (req.body && typeof req.body.hash_method === 'number') req.body.hash_method = '' + req.body.hash_method;
-
         const data: FRequest = req.body;
 
-        if (
-            !data ||
-            typeof data !== 'object' ||
-            (data.hash_method !== '1' && data.hash_method !== '2') ||
-            typeof data.token !== 'string' ||
-            (data.timestamp && typeof data.timestamp !== 'string' && typeof data.timestamp !== 'number') ||
-            (data.request_id && typeof data.request_id !== 'string') ||
-            ('na_id' in data && typeof data.na_id !== 'string') ||
-            ('coral_user_id' in data && (typeof data.coral_user_id !== 'string' || !/^\d+$/.test(data.coral_user_id)))
-        ) {
-            throw new ResponseError(400, 'invalid_request');
+        if (data && typeof data.hash_method === 'number') {
+            data.hash_method = '' + data.hash_method as '1' | '2';
         }
 
         try {
-            await this.validateFRequest(req, data, warnings);
+            await this.validateFRequest(req, data, this.strict_validate, warnings);
         } catch (err) {
             debug('Error validating request from %s', req.ip, err);
             res.setHeader('Server-Timing', 'validate;dur=' + (Date.now() - start));
@@ -338,34 +327,55 @@ export default class Server extends HttpServer {
     }
 
     async validateFRequest(
-        req: express.Request, data: FRequest,
+        req: express.Request, data: FRequest, strict = false,
         warnings?: {error: string; error_message: string}[],
     ) {
         const errors: {error: string; error_message: string; [WarningSymbol]?: boolean}[] = [];
 
-        const hash_method = '' + data.hash_method as '1' | '2';
+        if (!data || typeof data !== 'object') {
+            throw new ResponseError(415, 'invalid_request');
+        }
+
+        if ('hash_method' in data) {
+            if (data.hash_method !== '1' && data.hash_method !== '2') {
+                errors.push({error: 'invalid_hash_method', error_message: '`hash_method` must be "1" or "2"'});
+            }
+        } else {
+            errors.push({error: 'request_parameter_not_set', error_message: 'The `hash_method` parameter is required'});
+        }
+
         let jwt: Jwt<NintendoAccountIdTokenJwtPayload | CoralJwtPayload> | null = null;
 
-        try {
-            let sig: Buffer;
-            [jwt, sig] = Jwt.decode<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>(data.token);
+        if ('token' in data) {
+            if (typeof data.token !== 'string') {
+                errors.push({error: 'invalid_token', error_message: '`token` must be a string'});
+            } else {
+                try {
+                    let sig: Buffer;
+                    [jwt, sig] = Jwt.decode<NintendoAccountIdTokenJwtPayload | CoralJwtPayload>(data.token);
 
-            await this.validateToken(req, jwt, sig, hash_method, errors, warnings);
-        } catch (err) {
-            errors.push({error: 'invalid_token', error_message: (err as Error).message, [WarningSymbol]: !this.validate_tokens});
-            debug('Error validating token from %s, continuing anyway', req.ip, err);
+                    await this.validateToken(req, jwt, sig, data.hash_method, errors, warnings);
+                } catch (err) {
+                    debug('Error validating token from %s', req.ip, err);
+                    errors.push({error: 'invalid_token', error_message: (err as Error).message, [WarningSymbol]: !this.validate_tokens});
+                }
+            }
+        } else {
+            errors.push({error: 'request_parameter_not_set', error_message: 'The `token` parameter is required'});
         }
 
         if ('timestamp' in data) {
-            if (!/^\d+$/.test('' + data.timestamp)) {
-                errors.push({error: 'invalid_timestamp', error_message: 'Non-numeric timestamp is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
+            if (typeof data.timestamp !== 'string' && typeof data.timestamp !== 'number') {
+                errors.push({error: 'invalid_timestamp', error_message: '`timestamp` must be a string or number'});
+            } else if (!/^\d+$/.test('' + data.timestamp)) {
+                errors.push({error: 'invalid_timestamp', error_message: 'Non-numeric timestamp is not likely to be accepted by the Coral API', [WarningSymbol]: !strict});
             } else {
                 // For Android the timestamp should be in milliseconds
                 const timestamp_ms = parseInt('' + data.timestamp);
                 const now_ms = Date.now();
 
                 if (timestamp_ms > now_ms + 10000 || timestamp_ms + 10000 < now_ms) {
-                    errors.push({error: 'invalid_timestamp', error_message: 'Timestamp not matching the Android device is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
+                    errors.push({error: 'invalid_timestamp', error_message: 'Timestamp not matching the Android device is not likely to be accepted by the Coral API', [WarningSymbol]: !strict});
                 } else {
                     errors.push({error: 'invalid_timestamp', error_message: 'Timestamp sent by the client may not exactly match the Android device and is not likely to be accepted by the Coral API', [WarningSymbol]: true});
                 }
@@ -373,32 +383,42 @@ export default class Server extends HttpServer {
         }
 
         if ('request_id' in data) {
-            // For Android the request_id should be lowercase hex
-            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/.test('' + data.request_id)) {
-                errors.push({error: 'invalid_request_id', error_message: 'Request ID not a valid lowercase-hex v4 UUID is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
+            if (typeof data.request_id !== 'string') {
+                errors.push({error: 'invalid_request_id', error_message: '`request_id` must be a string'});
+            } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/.test('' + data.request_id)) {
+                // For Android the request_id should be lowercase hex
+                errors.push({error: 'invalid_request_id', error_message: 'Request ID not a valid lowercase-hex v4 UUID is not likely to be accepted by the Coral API', [WarningSymbol]: !strict});
             }
         }
 
         if ('na_id' in data) {
-            if (hash_method === '1' && data.na_id !== jwt?.payload.sub.toString()) {
-                errors.push({error: 'invalid_na_id', error_message: 'Nintendo Account ID not matching the token subject is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
+            if (typeof data.na_id !== 'string') {
+                errors.push({error: 'invalid_na_id', error_message: '`na_id` must be a string'});
+            } else if (data.hash_method === '1' && data.na_id !== jwt?.payload.sub.toString()) {
+                errors.push({error: 'invalid_na_id', error_message: 'Nintendo Account ID not matching the token subject is not likely to be accepted by the Coral API', [WarningSymbol]: !strict});
             }
         } else {
             if (data.hash_method === '1') {
                 errors.push({error: 'request_parameter_not_set', error_message: 'The `na_id` parameter was not set', [WarningSymbol]: true});
             }
             if (data.hash_method === '2') {
-                errors.push({error: 'request_parameter_not_set', error_message: 'The `na_id` parameter was not set, this may cause invalid tokens', [WarningSymbol]: !this.strict_validate});
+                errors.push({error: 'request_parameter_not_set', error_message: 'The `na_id` parameter was not set, this may cause invalid tokens', [WarningSymbol]: !strict});
             }
         }
 
         // coral_user_id is not required for hash method 1
-        if ('coral_user_id' in data && hash_method === '2') {
-            if (data.coral_user_id !== jwt?.payload.sub.toString()) {
-                errors.push({error: 'invalid_coral_user_id', error_message: 'Coral user ID not matching the token subject is not likely to be accepted by the Coral API', [WarningSymbol]: !this.strict_validate});
+        if ('coral_user_id' in data) {
+            if (typeof data.coral_user_id !== 'string') {
+                errors.push({error: 'invalid_coral_user_id', error_message: '`coral_user_id` must be a string'});
+            } else if (!data.coral_user_id.match(/^\d+$/)) {
+                errors.push({error: 'invalid_coral_user_id', error_message: '`coral_user_id` must be a numeric string'});
+            } else if (data.hash_method === '2' && data.coral_user_id !== jwt?.payload.sub.toString()) {
+                errors.push({error: 'invalid_coral_user_id', error_message: 'Coral user ID not matching the token subject is not likely to be accepted by the Coral API', [WarningSymbol]: !strict});
             }
-        } else if (!('coral_user_id' in data) && hash_method === '2') {
-            errors.push({error: 'request_parameter_not_set', error_message: 'The `coral_user_id` parameter was not set', [WarningSymbol]: true});
+        } else {
+            if (data.hash_method === '2') {
+                errors.push({error: 'request_parameter_not_set', error_message: 'The `coral_user_id` parameter was not set', [WarningSymbol]: true});
+            }
         }
 
         let index;
@@ -416,9 +436,9 @@ export default class Server extends HttpServer {
         }
 
         if (this.storage) {
-            const limits = hash_method === '1' ? this.limits_coral : this.limits_webservice;
+            const limits = data.hash_method === '1' ? this.limits_coral : this.limits_webservice;
 
-            await checkUseLimit(this.storage, 'f_' + hash_method, jwt?.payload.sub.toString() ?? 'null', req,
+            await checkUseLimit(this.storage, 'f_' + data.hash_method, jwt?.payload.sub.toString() ?? 'null', req,
                 !!limits, limits ?? undefined);
         }
     }
