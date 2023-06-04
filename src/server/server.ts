@@ -1,21 +1,20 @@
 import * as os from 'node:os';
 import createDebug from 'debug';
-import { v4 as uuidgen } from 'uuid';
 import express from 'express';
 import bodyParser from 'body-parser';
 import persist from 'node-persist';
 import { getJwks, Jwt } from '../util/jwt.js';
 import { product } from '../util/product.js';
-import { FRequest, FResult, FridaScriptExports, PackageInfo, SystemInfo } from './types.js';
 import { CoralJwtPayload, NintendoAccountIdTokenJwtPayload } from '../util/types.js';
 import { HttpServer, ResponseError } from '../util/http-server.js';
-import { AndroidDeviceConnection, AndroidDevicePool } from './device.js';
+import { DeviceConnection, DevicePool } from './devices.js';
 import MetricsCollector from './metrics.js';
 import { checkUseLimit } from './util.js';
+import { FRequest, FResult, PackageInfo } from './types.js';
 
 const ZNCA_CLIENT_ID = '71b963c1b7b6d119';
 
-const debug = createDebug('nxapi:znca-api:android-frida-server:api');
+const debug = createDebug('nxapi:znca-api:server');
 
 const WarningSymbol = Symbol('Warning');
 
@@ -27,11 +26,6 @@ export default class Server extends HttpServer {
 
     readonly app: express.Express;
 
-    ready: Promise<void> | null = null;
-    api: FridaScriptExports | null = null;
-    package_info: PackageInfo | null = null;
-    system_info: SystemInfo | null = null;
-
     storage: persist.LocalStorage | null = null;
     limits_coral: [requests: number, period_ms: number] | null = null;
     limits_webservice: [requests: number, period_ms: number] | null = null;
@@ -40,7 +34,7 @@ export default class Server extends HttpServer {
         req: express.Request;
         data?: FRequest;
         result: FResult;
-        device?: AndroidDeviceConnection;
+        device?: DeviceConnection;
         time: Date;
         dv?: number;
         dw?: number;
@@ -48,7 +42,7 @@ export default class Server extends HttpServer {
     } | null = null;
 
     constructor(
-        readonly devices: AndroidDevicePool | null = null,
+        readonly devices: DevicePool,
         readonly metrics: MetricsCollector | null = null,
     ) {
         super();
@@ -62,18 +56,9 @@ export default class Server extends HttpServer {
                 req.headers['x-forwarded-for'] ? ' (' + req.headers['x-forwarded-for'] + ')' : '',
                 req.headers['user-agent']);
 
-            res.setHeader('Server', product + ' android-frida-server');
-            res.setHeader('X-Server', product + ' android-frida-server');
+            res.setHeader('Server', product);
+            res.setHeader('X-Server', product);
             res.setHeader('X-Served-By', os.hostname());
-
-            if (this.package_info && this.system_info) {
-                res.setHeader('X-Android-Build-Type', this.system_info.type);
-                res.setHeader('X-Android-Release', this.system_info.version.release);
-                res.setHeader('X-Android-Platform-Version', this.system_info.version.sdk_int);
-                res.setHeader('X-znca-Platform', 'Android');
-                res.setHeader('X-znca-Version', this.package_info.version);
-                res.setHeader('X-znca-Build', this.package_info.build);
-            }
 
             next();
         });
@@ -92,42 +77,33 @@ export default class Server extends HttpServer {
         }
     }
 
-    setAndroidDeviceHeaders(res: express.Response, device: AndroidDeviceConnection) {
+    setDeviceHeaders(res: express.Response, device: DeviceConnection) {
         res.setHeader('X-Device-Id', device.device.id);
-        res.setHeader('X-Android-Build-Type', device.system_info.type);
-        res.setHeader('X-Android-Release', device.system_info.version.release);
-        res.setHeader('X-Android-Platform-Version', device.system_info.version.sdk_int);
-        res.setHeader('X-znca-Platform', 'Android');
-        res.setHeader('X-znca-Version', device.package_info.version);
-        res.setHeader('X-znca-Build', device.package_info.build);
+        device.setResponseHeaders(res);
+        res.setHeader('X-znca-Platform', device.platform);
+        res.setHeader('X-znca-Version', device.znca_version);
+        res.setHeader('X-znca-Build', device.znca_build);
     }
 
     async handleDevicesRequest(req: express.Request, res: express.Response) {
         return {
-            devices: this.devices!.devices.map(device => ({
+            devices: this.devices.devices.map(device => ({
                 id: device.device.id,
                 name: device.device.name,
                 data: device.data,
-                android_build_type: device.system_info.type,
-                android_release: device.system_info.version.release,
-                android_platform_version: device.system_info.version.sdk_int,
-                platform: 'Android',
-                znca_version: device.package_info.version,
-                znca_build: device.package_info.build,
+                ...device.debug_info,
                 busy: !this.devices!.available.includes(device),
             })),
-            worker_count: this.devices!.devices.length,
-            available_count: this.devices!.available.length,
-            queue: this.devices!.waiting.length,
+            worker_count: this.devices.devices.length,
+            available_count: this.devices.available.length,
+            queue: this.devices.waiting.length,
         };
     }
 
     async handleConfigRequest(req: express.Request, res: express.Response) {
-        const android_package_info =
-            this.devices ? this.devices.devices.map(d => d.package_info).sort((a, b) => b.build - a.build) :
-            this.package_info ? [this.package_info] : null;
-        const latest = android_package_info?.[0];
-        android_package_info?.reverse();
+        const devices = [...this.devices.devices].sort((a, b) => b.znca_build - a.znca_build);
+        const latest = devices[0];
+        devices.reverse();
 
         if (!latest) {
             throw new ResponseError(500, 'unknown_error', 'No workers available');
@@ -135,12 +111,13 @@ export default class Server extends HttpServer {
 
         const versions: (PackageInfo & {
             platform: string;
+            build: number;
             worker_count: number;
         })[] = [];
 
-        for (const package_info of android_package_info) {
-            const version = versions.find(v => v.platform === 'Android' &&
-                v.name === package_info.name && v.build === package_info.build);
+        for (const device of devices) {
+            const version = versions.find(v => v.platform === device.platform &&
+                v.build === device.znca_build);
 
             if (version) {
                 version.worker_count++;
@@ -148,8 +125,9 @@ export default class Server extends HttpServer {
             }
 
             versions.push({
-                platform: 'Android',
-                ...package_info,
+                platform: device.platform,
+                ...(device as any).package_info,
+                build: device.znca_build,
                 worker_count: 1,
             });
         }
@@ -157,14 +135,18 @@ export default class Server extends HttpServer {
         return {
             versions,
             // imink API compatibility
-            nso_version: latest.version,
+            nso_version: latest.znca_version,
         };
     }
 
     async handleFRequest(req: express.Request, res: express.Response) {
         const start = Date.now();
 
-        if (req.headers['x-znca-platform'] && req.headers['x-znca-platform'] !== 'Android') {
+        // if (req.headers['x-znca-platform'] && req.headers['x-znca-platform'] !== 'Android') {
+        //     throw new ResponseError(400, 'unsupported_platform', 'Unsupported X-znca-Platform');
+        // }
+        const requested_platform = req.headers['x-znca-platform']?.toString() ?? null;
+        if (requested_platform && requested_platform !== 'Android') {
             throw new ResponseError(400, 'unsupported_platform', 'Unsupported X-znca-Platform');
         }
         const requested_version = req.headers['x-znca-version']?.toString() ?? null;
@@ -215,12 +197,12 @@ export default class Server extends HttpServer {
 
         const validated = Date.now();
 
-        const timestamp = 'timestamp' in data ? '' + data.timestamp : undefined;
-        const request_id = 'request_id' in data ? data.request_id! : uuidgen();
-
-        return this.callWithFridaScript(req, res, async (api, queue, attach, device) => {
+        return this.callWithFridaScript(req, res, async (device, queue, attach) => {
             debug('Calling %s', data.hash_method === '2' ? 'genAudioH2' : 'genAudioH',
-                device?.device.id, (device?.package_info ?? this.package_info)?.version, requested_version);
+                device.device.id, device.znca_version, requested_version);
+
+            const timestamp = 'timestamp' in data ? '' + data.timestamp : undefined;
+            const request_id = 'request_id' in data ? data.request_id! : device.generateRequestId();
 
             let na_id = data.na_id ?? '';
             let coral_user_id = data.coral_user_id ?? '';
@@ -242,14 +224,14 @@ export default class Server extends HttpServer {
             } catch (err) {}
 
             const result = data.hash_method === '2' ?
-                await api.genAudioH2(data.token, timestamp, request_id,
+                await device.genAudioH2(data.token, timestamp, request_id,
                     {na_id, coral_user_id, coral_token: data.token}) :
-                await api.genAudioH(data.token, timestamp, request_id,
+                await device.genAudioH(data.token, timestamp, request_id,
                     {na_id, na_id_token: data.token});
 
             this.last_result = {
                 req, data, result, time: new Date(),
-                device: this.devices?.devices.find(d => d.api === api),
+                device,
                 dv: validated - start,
                 dw: queue,
                 da: attach,
@@ -280,7 +262,7 @@ export default class Server extends HttpServer {
             this.metrics?.incFRequestDuration(result.dp, 200, data.hash_method, 'process');
 
             return response;
-        }, requested_version).catch(err => {
+        }, null, requested_version).catch(err => {
             const status = err instanceof ResponseError ? err.status : 500;
             this.metrics?.total_f_requests.inc({status, type: data.hash_method});
             this.metrics?.incFRequestDuration(validated - start, status, data.hash_method, 'validate');
@@ -291,7 +273,7 @@ export default class Server extends HttpServer {
 
     async handleHealthRequest(req: express.Request, res: express.Response) {
         if (this.last_result && this.last_result.time.getTime() > (Date.now() - this.health_ttl)) {
-            if (this.last_result.device) this.setAndroidDeviceHeaders(res, this.last_result.device);
+            if (this.last_result.device) this.setDeviceHeaders(res, this.last_result.device);
 
             res.setHeader('Server-Timing',
                 'queue;dur=' + (this.last_result.result.dw + (this.last_result.dw ?? 0)) + ',' +
@@ -300,20 +282,20 @@ export default class Server extends HttpServer {
 
             return {
                 last_result_at: new Date(this.last_result.time).toUTCString(),
-                worker_count: this.devices!.devices.length,
-                available_count: this.devices!.available.length,
-                queue: this.devices!.waiting.length,
+                worker_count: this.devices.devices.length,
+                available_count: this.devices.available.length,
+                queue: this.devices.waiting.length,
             };
         }
 
-        return this.callWithFridaScript(req, res, async (api, queue, attach, device) => {
-            debug('Test gen_audio_h', device?.device.id, (device?.package_info ?? this.package_info)?.version);
+        return this.callWithFridaScript(req, res, async (device, queue, attach) => {
+            debug('Test gen_audio_h', device.device.id, device.znca_version);
 
-            const result = await api.genAudioH('id_token', 'timestamp', 'request_id');
+            const result = await device.genAudioH('id_token', 'timestamp', 'request_id');
 
             this.last_result = {
                 req, result, time: new Date(),
-                device: this.devices?.devices.find(d => d.api === api),
+                device,
                 dw: queue,
                 da: attach,
             };
@@ -328,63 +310,31 @@ export default class Server extends HttpServer {
 
             return {
                 last_result_at: this.last_result.time.toUTCString(),
-                worker_count: this.devices!.devices.length,
-                available_count: this.devices!.available.length,
-                queue: this.devices!.waiting.length,
+                worker_count: this.devices.devices.length,
+                available_count: this.devices.available.length,
+                queue: this.devices.waiting.length,
             };
-        }, null, !this.devices?.devices.length ?? false);
+        }, null, null, !this.devices.devices.length ?? false);
     }
 
     callWithFridaScript<T>(
         req: express.Request, res: express.Response,
-        fn: (api: FridaScriptExports, queue?: number, attach?: number, device?: AndroidDeviceConnection) => Promise<T>,
-        version: string | null = null, wait = true,
+        fn: (api: DeviceConnection, queue?: number, attach?: number, device?: DeviceConnection) => Promise<T>,
+        platform: string | null = null, version: string | null = null, wait = true,
     ) {
-        if (this.devices) {
-            const controller = new AbortController();
+        const controller = new AbortController();
 
-            req.on('close', () => controller.abort(new Error('Request aborted')));
+        req.on('close', () => controller.abort(new Error('Request aborted')));
 
-            return this.devices.callWithDevice(async (device, queue) => {
-                this.setAndroidDeviceHeaders(res, device);
+        return this.devices.callWithDevice(async (device, queue) => {
+            this.setDeviceHeaders(res, device);
 
-                return fn.call(null, device.api, queue ?? undefined, undefined, device);
-            }, device => !version || device.package_info.version === version,
-                wait ? undefined : 0, 1, controller.signal);
-        }
-
-        const start = Date.now();
-
-        return this.handleRetryAfterReattach(req, res, async () => {
-            const was_connected = !this.ready;
-            await this.ready;
-            const connected = Date.now();
-
-            return fn.call(null, this.api!, undefined, !was_connected ? connected - start : undefined);
-        });
-    }
-
-    async handleRetryAfterReattach<T>(
-        req: express.Request, res: express.Response,
-        handle: () => Promise<T>,
-        /** @internal */ _attempts = 0
-    ): Promise<T> {
-        try {
-            return await handle();
-        } catch (err) {
-            if ((err as any)?.message === 'Script is destroyed' && this.reattach) {
-                this.reattach?.();
-
-                if (!_attempts) {
-                    debug('Error in request from %s, retrying', req.ip, err);
-                    return this.handleRetryAfterReattach(req, res, handle, _attempts + 1);
-                }
-            }
-
-            debug('Error in request from %s', req.ip, err);
-
-            throw new ResponseError(500, 'unknown');
-        }
+            return fn.call(null, device, queue ?? undefined, undefined);
+        }, device => {
+            if (platform && device.platform !== platform) return false;
+            if (version && device.znca_version !== version) return false;
+            return true;
+        }, wait ? undefined : 0, 1, controller.signal);
     }
 
     async validateFRequest(

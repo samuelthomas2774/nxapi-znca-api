@@ -2,13 +2,14 @@ import process from 'node:process';
 import * as net from 'node:net';
 import * as dns from 'node:dns/promises';
 import createDebug from 'debug';
-import Server from '../android-frida-server/server.js';
-import { AndroidDeviceManager, AndroidDevicePool } from '../android-frida-server/device.js';
+import Server from '../server/server.js';
+import { DevicePool } from '../server/devices.js';
+import { AndroidDeviceManager } from '../android-frida-server/device.js';
 import { StartMethod } from '../android-frida-server/types.js';
 import type { Arguments as ParentArguments } from './index.js';
 import { ArgumentsCamelCase, Argv, YargsArguments } from '../util/yargs.js';
 import { parseListenAddress } from '../util/net.js';
-import MetricsCollector from '../android-frida-server/metrics.js';
+import MetricsCollector from '../server/metrics.js';
 import { initStorage, paths } from '../util/storage.js';
 import { UserData1, UserData2 } from '../android-frida-server/frida-script.cjs';
 
@@ -80,7 +81,7 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
 
     const metrics = argv.metrics ? new MetricsCollector() : null;
 
-    const device_pool = new AndroidDevicePool(metrics);
+    const device_pool = new DevicePool(metrics);
     const devices = new Set<AndroidDeviceManager>();
 
     if (argv.resolveMultipleDevices) {
@@ -225,12 +226,12 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
     try {
         debug('Test gen_audio_h');
         const result = await device_pool.callWithDevice(device => {
-            return device.api.genAudioH('id_token', 'timestamp', 'request_id');
+            return device.genAudioH('id_token', 'timestamp', 'request_id');
         });
         debug('Test returned', result);
         debug('Test gen_audio_h2');
         const result_2 = await device_pool.callWithDevice(device => {
-            return device.api.genAudioH2('id_token', 'timestamp', 'request_id');
+            return device.genAudioH2('id_token', 'timestamp', 'request_id');
         });
         debug('Test returned', result_2);
 
@@ -243,12 +244,12 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
 
         debug('Test gen_audio_h with user data', user_data);
         const result_3 = await device_pool.callWithDevice(device => {
-            return device.api.genAudioH('id_token', 'timestamp', 'request_id', user_data);
+            return device.genAudioH('id_token', 'timestamp', 'request_id', user_data);
         });
         debug('Test returned', result_3);
         debug('Test gen_audio_h2 with user data');
         const result_4 = await device_pool.callWithDevice(device => {
-            return device.api.genAudioH2('id_token', 'timestamp', 'request_id', user_data);
+            return device.genAudioH2('id_token', 'timestamp', 'request_id', user_data);
         });
         debug('Test returned', result_4);
     } catch (err) {

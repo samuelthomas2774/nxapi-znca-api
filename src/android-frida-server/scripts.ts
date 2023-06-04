@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { StartMethod } from './types.js';
-import { getFridaScript } from './util.js';
+import { getFridaScript } from '../server/util.js';
 
 export const frida_script = await getFridaScript(new URL('../android-frida-server/frida-script.cjs', import.meta.url));
 

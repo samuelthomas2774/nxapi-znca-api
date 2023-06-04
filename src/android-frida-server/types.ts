@@ -22,15 +22,6 @@ export enum StartMethod {
 
 export type FridaScriptExports = ScriptExports<typeof import('./frida-script.cjs')>;
 
-export interface FRequest {
-    hash_method: '1' | '2';
-    token: string;
-    timestamp?: string | number;
-    request_id?: string;
-    na_id?: string;
-    coral_user_id?: string;
-}
-
 export {
     PackageInfo,
     SystemInfo,
