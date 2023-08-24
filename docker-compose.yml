@@ -22,8 +22,6 @@ services:
       - '[::]:80'
       - --metrics
     restart: unless-stopped
-    depends_on:
-      - redroid
     labels:
       traefik.enable: true
       traefik.http.routers.nxapi-znca.entrypoints: websecure
@@ -46,7 +44,10 @@ services:
     build:
       context: redroid-coral
       args:
+        REDROID_IMAGE: ${REDROID_IMAGE:-redroid/redroid:12.0.0_64only-latest}
         CORAL_APK_URL: ${CORAL_APK_URL}
+        CORAL_APK_VERSION: ${CORAL_APK_VERSION:-2.4.0}
+        CORAL_APK_BUILD: ${CORAL_APK_BUILD:-3467}
         # shasum -a 256 com.nintendo.znca-2.4.0.apk
         CORAL_APK_HASH_SHA256: ${CORAL_APK_HASH_SHA256:-da0cf5647a855cadf7f69e02815d3fdf9d7ab3d568fe809f8b8ff47598016d0d}
     restart: unless-stopped
