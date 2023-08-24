@@ -138,12 +138,15 @@ export function setUserDataForGenAudioH2(data: UserData2) {
 }
 
 function patchJavaMethod<A extends unknown[], R>(
-    cls: any, method: string,
+    cls: any, method: string | ((cls: any) => any),
     callback: (original: (...args: A) => R, args: A) => R,
 ) {
-    cls[method].implementation = function (...args: A) {
+    const m = typeof method === 'string' ? cls[method] :
+        method.call(null, cls);
+
+    m.implementation = function (...args: A) {
         let original = (...args: A) => {
-            return this[method](...args);
+            return m.call(this, ...args);
         };
 
         try {
@@ -155,6 +158,78 @@ function patchJavaMethod<A extends unknown[], R>(
 }
 
 export function initialiseJavaPatches(version: number) {
+    // 2.7.0
+    if (version >= 4803) {
+        return perform(() => {
+            const NAUser = Java.use('com.nintendo.coral.core.entity.NAUser');
+
+            patchJavaMethod(NAUser, 'a', original => {
+                return user_data ? user_data.na_id : original();
+            });
+
+            const k = Java.use('pb.k');
+
+            patchJavaMethod(k, 'c', original => {
+                return user_data && 'na_id_token' in user_data ? user_data.na_id_token : original();
+            });
+
+            const l = Java.use('c9.l');
+
+            patchJavaMethod(l, 'b', original => {
+                return user_data && 'coral_token' in user_data ? user_data.coral_token : original();
+            });
+
+            /** com.nintendo.coral.models.AccountModel */
+            const AccountModel = Java.use('ea.a');
+
+            patchJavaMethod(AccountModel, a => a.h.overload(), original => {
+                const coral_user: any = original();
+
+                if (user_data && 'coral_user_id' in user_data) {
+                    coral_user.a.value = int64(user_data.coral_user_id);
+                }
+
+                return coral_user;
+            });
+
+            // android.content.SharedPreferences
+            const SharedPreferences = Java.use('android.app.SharedPreferencesImpl');
+
+            patchJavaMethod(SharedPreferences, 'getString', (original, args) => {
+                const [key, default_value] = args;
+
+                if (user_data) {
+                    if (key === 'CoralNAUserKey') return JSON.stringify({
+                        id: user_data.na_id,
+                        nickname: '-',
+                        country: 'GB',
+                        birthday: '2000-01-01',
+                        language: 'en-GB',
+                        screenName: '•••@••• / •••',
+                        mii: null,
+                    });
+
+                    if (key === 'CoralUserKeyV2' && 'coral_user_id' in user_data) return JSON.stringify({
+                        id: parseInt(user_data.coral_user_id),
+                        nsaId: '0000000000000000',
+                        name: '-',
+                        imageUri: 'https://cdn-image.baas.nintendo.com/0/0000000000000000',
+                        supportId: '0000-0000-0000-0000-0000-0',
+                        links: {
+                            nintendoAccount: { membership: { active: true } },
+                            friendCode: { regenerable: true, regenerableAt: 0, id: '0000-0000-0000' },
+                        },
+                        etag: '"0000000000000000"',
+                        permissions: { presence: 'FRIENDS' },
+                        presence: { state: 'OFFLINE', updatedAt: 0, logoutAt: 0, game: {} },
+                    });
+                }
+
+                return original(...args);
+            });
+        });
+    }
+
     // 2.4.0
     if (version >= 3467) {
         return perform(() => {
