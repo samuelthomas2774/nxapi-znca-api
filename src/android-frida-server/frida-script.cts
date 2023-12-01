@@ -158,6 +158,78 @@ function patchJavaMethod<A extends unknown[], R>(
 }
 
 export function initialiseJavaPatches(version: number) {
+    // 2.8.0
+    if (version >= 5349) {
+        return perform(() => {
+            const NAUser = Java.use('com.nintendo.coral.core.entity.NAUser');
+
+            patchJavaMethod(NAUser, 'h', original => {
+                return user_data ? user_data.na_id : original();
+            });
+
+            const j = Java.use('bw.j');
+
+            patchJavaMethod(j, 'c', original => {
+                return user_data && 'na_id_token' in user_data ? user_data.na_id_token : original();
+            });
+
+            const l = Java.use('s4.l');
+
+            patchJavaMethod(l, 'b', original => {
+                return user_data && 'coral_token' in user_data ? user_data.coral_token : original();
+            });
+
+            /** com.nintendo.coral.models.AccountModel */
+            const AccountModel = Java.use('ty.a');
+
+            patchJavaMethod(AccountModel, 'i', original => {
+                const coral_user: any = original();
+
+                if (user_data && 'coral_user_id' in user_data) {
+                    coral_user.p.value = int64(user_data.coral_user_id);
+                }
+
+                return coral_user;
+            });
+
+            // android.content.SharedPreferences
+            const SharedPreferences = Java.use('android.app.SharedPreferencesImpl');
+
+            patchJavaMethod(SharedPreferences, 'getString', (original, args) => {
+                const [key, default_value] = args;
+
+                if (user_data) {
+                    if (key === 'CoralNAUserKey') return JSON.stringify({
+                        id: user_data.na_id,
+                        nickname: '-',
+                        country: 'GB',
+                        birthday: '2000-01-01',
+                        language: 'en-GB',
+                        screenName: '•••@••• / •••',
+                        mii: null,
+                    });
+
+                    if (key === 'CoralUserKeyV2' && 'coral_user_id' in user_data) return JSON.stringify({
+                        id: parseInt(user_data.coral_user_id),
+                        nsaId: '0000000000000000',
+                        name: '-',
+                        imageUri: 'https://cdn-image.baas.nintendo.com/0/0000000000000000',
+                        supportId: '0000-0000-0000-0000-0000-0',
+                        links: {
+                            nintendoAccount: { membership: { active: true } },
+                            friendCode: { regenerable: true, regenerableAt: 0, id: '0000-0000-0000' },
+                        },
+                        etag: '"0000000000000000"',
+                        permissions: { presence: 'FRIENDS' },
+                        presence: { state: 'OFFLINE', updatedAt: 0, logoutAt: 0, game: {} },
+                    });
+                }
+
+                return original(...args);
+            });
+        });
+    }
+
     // 2.7.0
     if (version >= 4803) {
         return perform(() => {
