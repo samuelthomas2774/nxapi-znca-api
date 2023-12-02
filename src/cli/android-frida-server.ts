@@ -12,6 +12,7 @@ import { parseListenAddress } from '../util/net.js';
 import MetricsCollector from '../server/metrics.js';
 import { initStorage, paths } from '../util/storage.js';
 import { UserData1, UserData2 } from '../android-frida-server/frida-script.cjs';
+import { DockerListContainersItem, listDockerContainers } from '../util/docker.js';
 
 const debug = createDebug('cli:android-frida-server');
 
@@ -58,6 +59,9 @@ export function builder(yargs: Argv<ParentArguments>) {
     }).option('resolve-multiple-devices', {
         type: 'boolean',
         default: false,
+    }).option('resolve-multiple-devices-docker', {
+        type: 'boolean',
+        default: false,
     }).option('metrics', {
         type: 'boolean',
         default: false,
@@ -71,20 +75,12 @@ export function builder(yargs: Argv<ParentArguments>) {
 type Arguments = YargsArguments<ReturnType<typeof builder>>;
 
 export async function handler(argv: ArgumentsCamelCase<Arguments>) {
-    const start_method =
-        argv.startMethod === 'spawn' ? StartMethod.SPAWN :
-        argv.startMethod === 'activity' ? StartMethod.ACTIVITY :
-        argv.startMethod === 'service' ? StartMethod.SERVICE :
-        argv.startMethod === 'force-activity' ? StartMethod.FORCE_ACTIVITY :
-        argv.startMethod === 'force-service' ? StartMethod.FORCE_SERVICE :
-        StartMethod.NONE;
-
     const metrics = argv.metrics ? new MetricsCollector() : null;
 
     const device_pool = new DevicePool(metrics);
     const devices = new Set<AndroidDeviceManager>();
 
-    if (argv.resolveMultipleDevices) {
+    if (argv.resolveMultipleDevices || argv.resolveMultipleDevicesDocker) {
         // Automatically add multiple devices using the same hostname
         // This is intended to be used with scaled redroid containers
         // The server will check for updated containers every 1m
@@ -99,6 +95,8 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
 
             const device_names = [];
 
+            let containers: DockerListContainersItem[] | null = null;
+
             for (const result of results) {
                 const device_name = result.family === 6 ?
                     '[' + result.address + ']:5555' : result.address + ':5555';
@@ -109,14 +107,34 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
                 debug('Adding device %s', device_name);
 
                 try {
+                    if (argv.resolveMultipleDevicesDocker && !containers) {
+                        debug('Listing redroid-coral Docker containers');
+                        containers = await listDockerContainers({
+                            status: ['running'],
+                            label: ['uk.org.fancy.nxapi-znca-api.coral.version'],
+                        });
+                        debug('Docker containers', containers.map(c => [c.Id, ...c.Names]));
+                    }
+
+                    // Find Docker container labels
+                    const container = containers?.find(c => Object.values(c.NetworkSettings.Networks).find(n =>
+                        (result.family === 4 && n.IPAddress === result.address) ||
+                        (result.family === 6 && n.GlobalIPv6Address === result.address)
+                    ));
+
+                    const options = container ? getDeviceOptionsFromLabels(container.Labels) : null;
+
+                    debug('Container %s %s', device_name, container?.Id);
+                    debug('Connecting to device %s, options:', device_name, options);
+
                     const device = await AndroidDeviceManager.create(
                         device_pool,
                         device_name,
                         argv.adbPath,
-                        argv.adbRoot,
-                        argv.execCommand,
-                        argv.fridaServerPath,
-                        start_method,
+                        options?.adb_root ?? argv.adbRoot,
+                        options?.exec_command !== undefined ? options.exec_command ?? undefined : argv.execCommand,
+                        options?.frida_server_path ?? argv.fridaServerPath,
+                        options?.start_method ?? getStartMethodFromString(argv.startMethod),
                     );
 
                     device.onReattachFailed = () => {
@@ -155,7 +173,7 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
             argv.adbRoot,
             argv.execCommand,
             argv.fridaServerPath,
-            start_method,
+            getStartMethodFromString(argv.startMethod),
         );
 
         device.onReattachFailed = () => {
@@ -255,4 +273,35 @@ export async function handler(argv: ArgumentsCamelCase<Arguments>) {
     } catch (err) {
         debug('Test failed', err);
     }
+}
+
+function getStartMethodFromString(start_method: string) {
+    return start_method === 'spawn' ? StartMethod.SPAWN :
+        start_method === 'activity' ? StartMethod.ACTIVITY :
+        start_method === 'service' ? StartMethod.SERVICE :
+        start_method === 'force-activity' ? StartMethod.FORCE_ACTIVITY :
+        start_method === 'force-service' ? StartMethod.FORCE_SERVICE :
+        StartMethod.NONE;
+}
+
+function getDeviceOptionsFromLabels(labels: Record<string, string>, argv?: ArgumentsCamelCase<Arguments>) {
+    const options = Object.fromEntries(Object.entries(labels)
+        .filter(([key, value]) => key.startsWith('uk.org.fancy.nxapi-znca-api.attach-option.'))
+        .map(([key, value]) => [key.substr(42), value]));
+
+    return {
+        adb_root: 'adb-root' in options ?
+            options['adb-root'] === 'true' :
+            argv?.adbRoot,
+        exec_command: 'exec-command' in options ?
+            options['exec-command'] === 'null' ? null :
+            options['exec-command'] :
+            argv?.execCommand,
+        frida_server_path: 'frida-server-path' in options ?
+            options['frida-server-path'] :
+            argv?.fridaServerPath,
+        start_method: 'start-method' in options ?
+            getStartMethodFromString(options['start-method']) :
+            argv?.startMethod ? getStartMethodFromString(argv.startMethod) : undefined,
+    };
 }
