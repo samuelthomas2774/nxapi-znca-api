@@ -1,7 +1,9 @@
 API usage
 ---
 
-The server has two endpoints, `/api/znca/f` and `/api/znca/config`, which are compatible with [the imink API](https://github.com/JoneWang/imink/wiki/imink-API-Documentation)'s `/f` and `/config` endpoints.
+The server has four endpoints, `/api/znca/f` and `/api/znca/config`, which are compatible with [the imink API](https://github.com/JoneWang/imink/wiki/imink-API-Documentation)'s `/f` and `/config` endpoints, and `/api/znca/encrypt-request` and `/api/znca/decrypt-request`, which are used for request encryption in 3.0.1 and later.
+
+> From June 2025, authentication is required. See [api-auth.md](api-auth.md) for more information.
 
 ### `/config`
 
@@ -38,12 +40,13 @@ The `versions` field is not supported by the imink API. `worker_count` is provid
 The following data should be sent as JSON to generate an `f` parameter:
 
 ```ts
-interface ZncaApiRequest {
+interface ZncaApiFRequest {
     /**
      * `"1"` or `1` for Coral (Nintendo Switch Online app) authentication (`Account/Login` and `Account/GetToken`).
      * `"2"` or `2` for web service authentication (`Game/GetWebServiceToken`).
      */
     hash_method: '1' | '2' | 1 | 2;
+
     /**
      * The token used to authenticate to the Coral API:
      * The Nintendo Account `id_token` for Coral authentication.
@@ -58,6 +61,7 @@ interface ZncaApiRequest {
      * A random (v4) UUID.
      */
     request_id?: string;
+
     /**
      * The user's Nintendo Account ID from https://api.accounts.nintendo.com/2.0.0/users/me (`id`).
      *
@@ -75,6 +79,23 @@ interface ZncaApiRequest {
      * This will be set automatically from the `token` if not provided. (Providing it is recommended.)
      */
     coral_user_id?: string;
+
+    /**
+     * Additional data used in the Account/Login, Account/GetToken or Game/GetWebServiceToken request.
+     *
+     * If provided the API will return a base64-encoded `encrypted_token_request` field containing the encrypted
+     * request body to send to the Coral API.
+     *
+     * The `f`, `requestId` and `timestamp` fields in `parameter` are required and must be set to an empty string
+     * or `0`. This will be replaced with the generated values.
+     */
+    encrypt_token_request?: {
+        url: string;
+        parameter:
+            import('nxapi/coral').AccountLoginParameter |
+            import('nxapi/coral').AccountTokenParameter |
+            import('nxapi/coral').WebServiceTokenParameter;
+    };
 }
 ```
 
@@ -117,6 +138,58 @@ Name        | Description
 `queue`     | Time waiting for the processing thread to become available.
 `init`      | Time waiting for `com.nintendo.coral.core.services.voip.Libvoipjni.init`.
 `process`   | Time waiting for `com.nintendo.coral.core.services.voip.Libvoipjni.genAudioH`/`genAudioH2`.
+
+### `/encrypt-request`
+
+The following data should be sent as JSON to encrypt a request body to sent to the Coral API.
+
+```ts
+interface ZncaApiEncryptRequestRequest {
+    /**
+     * The URL of the Coral API request, e.g. "https://api-lp1.znc.srv.nintendo.net/v4/Friend/List".
+     */
+    url: string;
+    /**
+     * The Coral token.
+     *
+     * This is the token sent in the `Authorization` header in the request. For requests that do not send a token,
+     * e.g. Account/Login and Account/GetToken, this should be null, but must be sent for all requests that do send
+     * a token.
+     */
+    token: string | null;
+    /**
+     * The request body of the Coral API request.
+     *
+     * This must be provided as a plain JSON-encoded string, e.g. "{\"parameter\":{}}".
+     */
+    data: string;
+}
+```
+
+The encrypted data will be returned as binary data with the content type `application/octet-stream`. This may at some point also support returning JSON if requested in the `Accept` header. For now please send an `Accept: application/octet-stream` header.
+
+This endpoint currently does not return information about the device used to process the request.
+
+### `/decrypt-response`
+
+The following data should be sent as JSON to decrypt a response from the Coral API.
+
+```ts
+interface ZncaApiDecryptResponseRequest {
+    /**
+     * The response received from the Coral API.
+     *
+     * This must be base64-encoded.
+     */
+    data: string;
+}
+```
+
+The decrypted data will be returned as plain text with the content type `text/plain`, which should be valid JSON. This may at some point also support returning JSON if requested in the `Accept` header. For now please send an `Accept: text/plain` header.
+
+While the app can decrypt data it encrypts itself, this endpoint will only return decrypted data that contains a valid Coral API response.
+
+This endpoint currently does not return information about the device used to process the request.
 
 ### Health monitoring
 
