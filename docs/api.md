@@ -141,7 +141,7 @@ Name        | Description
 
 ### `/encrypt-request`
 
-The following data should be sent as JSON to encrypt a request body to sent to the Coral API.
+The following data should be sent as JSON to encrypt a request body to send to the Coral API.
 
 ```ts
 interface ZncaApiEncryptRequestRequest {
@@ -152,9 +152,9 @@ interface ZncaApiEncryptRequestRequest {
     /**
      * The Coral token.
      *
-     * This is the token sent in the `Authorization` header in the request. For requests that do not send a token,
-     * e.g. Account/Login and Account/GetToken, this should be null, but must be sent for all requests that do send
-     * a token.
+     * This is the token sent in the `Authorization` header in the request to the Coral API. For requests that do
+     * not send a token, e.g. Account/Login and Account/GetToken, this should be null, but is required for all
+     * requests that do send a token.
      */
     token: string | null;
     /**
@@ -166,7 +166,7 @@ interface ZncaApiEncryptRequestRequest {
 }
 ```
 
-The encrypted data will be returned as binary data with the content type `application/octet-stream`. This may at some point also support returning JSON if requested in the `Accept` header. For now please send an `Accept: application/octet-stream` header.
+The encrypted data will be returned as binary data with the content type `application/octet-stream`. This may at some point also support returning JSON with the base64-encoded encrypted data if requested in the `Accept` header. For now please send an `Accept: application/octet-stream` header.
 
 This endpoint currently does not return information about the device used to process the request.
 
@@ -185,7 +185,7 @@ interface ZncaApiDecryptResponseRequest {
 }
 ```
 
-The decrypted data will be returned as plain text with the content type `text/plain`, which should be valid JSON. This may at some point also support returning JSON if requested in the `Accept` header. For now please send an `Accept: text/plain` header.
+The decrypted data will be returned as plain text, which should be valid JSON, with the content type `text/plain`. This may at some point also support returning JSON with the decrypted data if requested in the `Accept` header. For now please send an `Accept: text/plain` header.
 
 While the app can decrypt data it encrypts itself, this endpoint will only return decrypted data that contains a valid Coral API response.
 

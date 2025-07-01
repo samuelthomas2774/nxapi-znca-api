@@ -40,7 +40,7 @@ const token = await response.json() as {
 };
 ```
 
-The returned token, including refresh token, is short-lived and must not be saved persistently. Instead, the client should always attempt to obtain a new token using it's client credentials if it does not already have a token. Tokens can only be used for a single Coral user.
+The returned token, including refresh token, is short-lived and must not be saved persistently. Instead, the client should always attempt to obtain a new token using it's client credentials if it does not already have a token. Tokens can only be used for a single Coral user; if the client authenticates using multiple Nintendo Accounts it must obtain a separate token for each user.
 
 If the client is attempting to refresh a token using the `refresh_token` grant and receives an `invalid_grant` error it should attempt to obtain a new token using it's client credentials. If the client receives an `invalid_grant` error in any other case it should not retry.
 
