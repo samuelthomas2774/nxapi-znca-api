@@ -200,3 +200,37 @@ When sending a GET request to `/api/znca/health`, the server will attempt to gen
 `/api/znca/devices` will return the list of worker devices connected to the server.
 
 These endpoints are only provided for monitoring/debugging purposes.
+
+### Errors
+
+Error responses are always sent as JSON, and will include an `error` field, with an appropriate HTTP status code. Some errors may also include a human-readable `error_description` field intended for client developers.
+
+`error`                             | Description
+------------------------------------|---------------
+`unknown_error` (500)               | Misc. error, may include an `error_description` with more information
+`service_unavailable` (503)         | The server was unable to connect to a worker device, or it took too long for a worker to become available
+`unauthorised` (401)                | No authentication was provided but is required, see [api-auth.md](api-auth.md)
+`invalid_token` (401)               | The access token was invalid/expired
+`insufficient_scope` (403)          | The access token scope does not allow use of the requested endpoint or optional request field
+`invalid_request` (400)             | Request parameters are not valid, may include an `errors` and/or `warnings` field with more information
+`invalid_request` (415)             | Invalid request body/unsupported content type
+`request_parameter_not_set` (400)   | Request parameters are not valid
+`unsupported_platform` (400)        | Unsupported `X-znca-Platform`
+`unsupported_version` (406)         | Unsupported `X-znca-Version`
+`incompatible_client` (400)         | The `X-znca-Client-Version` header indicates the client may not be compatible with the Coral version it requested - this means the client likely needs updating
+`rate_limit` (429)                  | See [rate limits](#rate-limits)
+
+Error responses will also include a `debug_id` field containing a random string that may be used to find more information about errors. This is also included in the `X-Trace-Id` header in all responses.
+
+Some success responses will also include a `warnings` field, usually if request data can be accepted by the f-generation API but may return tokens that could be rejected by Nintendo.
+
+### Rate limits
+
+Request type                                | Rate limit                | Key
+--------------------------------------------|---------------------------|---------------
+Coral authentication (hash method 1)        | 10 requests/60 minutes    | Nintendo Account user
+Web service authentication (hash method 2)  | 20 requests/30 minutes    | Coral user
+Request encryption                          | TODO                      | nxapi-auth session
+Response decryption                         | TODO                      | nxapi-auth session
+
+f-generation requests with a `encrypt_token_request` field currently are only counted as coral/web service auth requests; the request encryption rate limit is not used.

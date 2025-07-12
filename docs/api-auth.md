@@ -6,8 +6,9 @@ The API requires client authentication via [nxapi-auth](https://nxapi-auth.fancy
 This uses the standard OAuth 2 client credentials grant. In OAuth 2 terms:
 
 - nxapi-auth is the authorisation server
-- nxapi-znca-api is the resource server and protected resource
-- as clients authenticate using only it's own credentials, there is no resource owner
+- nxapi-znca-api is the resource server and itself the protected resource
+
+OAuth clients must be registered at https://nxapi-auth.fancy.org.uk/oauth/clients.
 
 ### Tokens
 
@@ -44,14 +45,28 @@ The returned token, including refresh token, is short-lived and must not be save
 
 If the client is attempting to refresh a token using the `refresh_token` grant and receives an `invalid_grant` error it should attempt to obtain a new token using it's client credentials. If the client receives an `invalid_grant` error in any other case it should not retry.
 
-The token endpoint supports `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` assertions. This must be configured in nxapi-auth.
-
 - [RFC 6749: The OAuth 2.0 Authorization Framework](https://datatracker.ietf.org/doc/html/rfc6749)
     - [Client Credentials Grant](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4)
     - [Issuing an Access Token](https://datatracker.ietf.org/doc/html/rfc6749#section-5)
     - [Refreshing an Access Token](https://datatracker.ietf.org/doc/html/rfc6749#section-6)
 - [RFC 7521: Assertion Framework for OAuth 2.0 Client Authentication and Authorization Grants](https://datatracker.ietf.org/doc/html/rfc7521)
     - [Using Assertions for Client Authentication](https://datatracker.ietf.org/doc/html/rfc7521#section-4.2)
+
+#### Client assertions
+
+The token endpoint supports `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` assertions. This must be configured in nxapi-auth.
+
+JWTs must have these claims:
+
+- `aud`, exactly or an array including `https://nxapi-auth.fancy.org.uk`
+- `typ`, exactly `client_assertion`
+- `exp`, and not be expired
+
+JWTs must also:
+
+- Have a `jku` value in the token header, matching a JSON Web Key Set URI configured in nxapi-auth
+- Have a `kid` value in the token header
+- Have a `alg` value in the token header of `RS256`
 
 ### Token authentication
 

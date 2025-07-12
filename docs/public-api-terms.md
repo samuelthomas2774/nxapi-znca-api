@@ -7,8 +7,8 @@
     - The preferred format is `project/version (+url)`, e.g. `nxapi/1.0.0 (+https://github.com/samuelthomas2774/nxapi)`; libraries that use the API should include a User-Agent component for both the library and the dependent software, e.g. `library/1.0.0 (...) nxapi/1.0.0 (...)`
 - The client *must* authenticate to the API using credentials obtained via [nxapi-auth](https://nxapi-auth.fancy.org.uk)
     - Authentication using user credentials/authorisation is not required
-    - For confidential clients, i.e. clients that access the API via the developer's server, authentication must use a client secret or client attestation
-    - For public clients, i.e. clients that access the API via the user's device, authentication may optionally use a client attestation or only the client identifier
+    - For confidential clients, i.e. clients that access the API via the developer's server, authentication must use a client secret or client assertion
+    - For public clients, i.e. clients that access the API via the user's device, authentication may optionally use a client assertion or only the client identifier
     - The token should not be stored and can only be used by a single Coral user
     - The token should be refreshed using the returned refresh token when it expires if the client is still using the API
 - The client *should* attempt to imitate Nintendo's official apps as closely as possible
