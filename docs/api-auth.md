@@ -8,7 +8,7 @@ This uses the standard OAuth 2 client credentials grant. In OAuth 2 terms:
 - nxapi-auth is the authorisation server
 - nxapi-znca-api is the resource server and itself the protected resource
 
-OAuth clients must be registered at https://nxapi-auth.fancy.org.uk/oauth/clients.
+OAuth clients must be registered at https://nxapi-auth.fancy.org.uk/oauth/clients. Make sure you complete the client information section - this may be visible to users authenticating with the f-generation API in the future.
 
 ### Tokens
 
