@@ -166,7 +166,7 @@ interface ZncaApiEncryptRequestRequest {
 }
 ```
 
-The encrypted data will be returned as binary data with the content type `application/octet-stream`. This may at some point also support returning JSON with the base64-encoded encrypted data if requested in the `Accept` header. For now please send an `Accept: application/octet-stream` header.
+The encrypted data will be returned as binary data with the content type `application/octet-stream`. This also supports returning JSON-encoded data with a base64-encoded `data` field. You should always send an `Accept` header to set the response type.
 
 This endpoint currently does not return information about the device used to process the request.
 
@@ -185,7 +185,7 @@ interface ZncaApiDecryptResponseRequest {
 }
 ```
 
-The decrypted data will be returned as plain text, which should be valid JSON, with the content type `text/plain`. This may at some point also support returning JSON with the decrypted data if requested in the `Accept` header. For now please send an `Accept: text/plain` header.
+The decrypted data will be returned as plain text, which should be valid JSON, with the content type `text/plain`. This also supports returning JSON-encoded data with a string `data` field. You should always send an `Accept` header to set the response type.
 
 While the app can decrypt data it encrypts itself, this endpoint will only return decrypted data that contains a valid Coral API response.
 
