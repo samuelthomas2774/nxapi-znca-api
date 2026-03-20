@@ -8,6 +8,7 @@
 - The client *must* authenticate to the API using credentials obtained via [nxapi-auth](https://nxapi-auth.fancy.org.uk)
     - Authentication using user credentials/authorisation is not required
     - You should use a separate client identifier for development
+    - You should complete relevant client details, such as description and contact address
     - For confidential clients, i.e. clients that access the API via the developer's server, authentication must use a client secret or client assertion
     - For public clients, i.e. clients that access the API via the user's device, authentication may optionally use a client assertion or only the client identifier
     - The token should not be stored and can only be used by a single Coral user
@@ -16,6 +17,11 @@
 - Where the below requirements include informing the user that data is sent to any non-Nintendo service, including this API and the service itself, the client/service *must* do so *before* asking the user to sign in using their Nintendo Account, and *must* require the user to explicitly acknowledge this before contacting non-Nintendo services
 - The client *must* cache tokens for their full validity period, unless deletion is requested, or access is no longer required, and *must* only renew tokens as Nintendo's official apps/web services do
 - You may want to include a link to [docs/end-user-help.md](./end-user-help.md)
+
+For clients that are available to other users, e.g. software or websites that are released publicly:
+
+- The client *must* avoid requesting user Nintendo Account authentication if possible, for example a website that only requires public user data, such as user nicknames and icons and play activity data, should authenticate using dedicated accounts
+- Features using nxapi-auth, nxapi-znca-api, or any Nintendo APIs, or any data retrieved from them, *must* be available to users free of charge, and *must not* require paid subscriptions or show advertisements, although optional donations and monetisation for non-Nintendo features may be used
 
 For clients that authenticate using a user's account:
 
